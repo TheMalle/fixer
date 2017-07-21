@@ -5,12 +5,24 @@ var PastebinAPI = require('pastebin-js');
 const querystring = require('querystring');
 const http = require('http');
 
+// Parse inputs
+const reAPIKey = /^\-key\=([^\ ]+)$/
+var discordApiKey = '';
+process.argv.forEach(function (val, index, array) {
+    if (reAPIKey.test(val)) {
+        discordApiKey = reAPIKey.exec(val)[1];
+    }
+});
+
 var pastebin = new PastebinAPI();
-const discordApiKey = 'MzM3MzEzMzkwNTcxNTUyNzc1.DFKEnQ.DUgv_wJURLp_PouUQWTG6dw_W2E';
 const client = new Discord.Client();
-const reHelp = /^\[help\]$/i;
+const reConfirm = /^\[y\]$/i;
+const reStop = /^\[stop\]$/i;
+const reHelp = /^\[help(?:\:\s*([A-z][A-z ]*))?\]$/i;
 const reInitiativeRoll = /^\[i(?:nit(?:iative)?)? ?(meat|astral)?\s*(?:([\+\-])\s*(\d+)d6)?\s*(?:([\+\-])\s*(\d+))?\]$/i;
 //const reDamageTest = /^\[\d+(S|P)(?:(\+|\-)(\d+))b(\d+)a(\d+)(!)?\]$/;
+const reClean = /^\[\s*clean\s*(\d+)?\s*\]$/i;
+const reNuke = /^\[\s*nuke\s*\]$/i;
 const reGetChar = /^\[\s*get(?:Char(?:acter)?)?\:\s?([A-z0-9]{8})\s*\]$/i;
 const reCheckChar = /^\[\s*check(?:Char(?:acter)?)?\s*\]$/i;
 const reUnloadChar = /^\[\s*unload(?:Char(?:acter)?)?\s*\]$/i;
@@ -18,6 +30,8 @@ const reIsAttribute = /^(Body|Agility|Reaction|Strength|Charisma|Intuition|Logic
 const reIsAdditionalCharacterStat = /^()$/i
 const reRollFormat = /^\s*\[\s*([A-z0-9 \+\-]*?[0-9]*)\s*(?:\[(\d+)\])?\s*(!)?\s*(v|a|T)?\s*(\d+)?\s*(?:\[(\d+)\])?\s*(!)?\s*(?:,\s*(\d+))?\s*\]\s*$/
 var characterMap = {};
+var awaitingConfirmation = {};
+var nuking = {};
 
 const attributeMap = {
     'body': 'BOD',
@@ -138,6 +152,7 @@ const skillTable = {
 // TODO: Extended tests [e]
 // TODO: Damage rolls
 // TODO: Essence as additional character statistic
+// TODO: [clear] / [nuke] to remove messages from channel
 
 // [perception+willpower+2[5]!]
 // [perception+willpower+2[5]!v12(5)!]
@@ -169,17 +184,39 @@ $                       end of line
 */
 
 client.on('ready', () => {
+    client.user.setGame('SR5e, type [help] for help');
     console.log('I am ready!');
 });
 
 client.on('message', message => {
+
     // If it's not a message from this bot
     if (message.author.id != client.user.id) {
-        // Handle specific commands first
 
-        // Help
-        if (reHelp.test(message.content)) {
+        // If we are awaiting confirmation from the user, override any other commands
+        if (message.author.id in awaitingConfirmation) {
+
+        }
+
+        // Then handle specific commands
+        // Stop ongoing action
+        else if (reStop.test(message.content)) {
+            // This uses listeners to perform the correct action
+        } 
+
+        // Help commands
+        else if (reHelp.test(message.content)) {
             doDisplayHelp(message);
+        } 
+
+        // Clean
+        else if (reClean.test(message.content)) {
+            doClean(message);
+        } 
+
+        // Nuke
+        else if (reNuke.test(message.content)) {
+            doCleanAll(message);
         } 
         
         // Get character
@@ -207,7 +244,7 @@ client.on('message', message => {
             doGeneralRoll(message);
         }
     }
-});
+}); 
 
 client.login(discordApiKey);
 
@@ -219,8 +256,40 @@ client.login(discordApiKey);
 ####################################################################################
 */
 function doDisplayHelp (message) {
+    let arg = reHelp.exec(message)[1];
+    arg = arg ? stringCondenseLower(arg) : '';
+    if (arg == '') {
+        doDisplayGeneralHelp(message);
+    }
+
+    else if (arg == 'admin') {
+        doDisplayAdminHelp(message);
+    }
+
+    else if (arg == 'character') {
+        doDisplayCharacterHelp(message);
+    }
+}
+
+function doDisplayAdminHelp (message) {
     let helpmsg = 
-          'the following rolls are available to everyone:\n'
+          '\n'
+        + 'The following administration commands are available:\n'
+        + '\t**[clean X]** remove the last X messages in the channel. Maximum of 50. Defaults to 10 if omitted.\n'
+        + '\t**[nuke]** remove all messages from the channel (requires confirmation; can take significant amount of time).\n'
+        + '\t**[y]** confirm a [nuke] request.\n'
+        + '\t**[stop]** stop a scheduled or ongoing [nuke].\n'
+
+    message.reply(helpmsg);
+}
+
+function doDisplayGeneralHelp (message) {
+    let helpmsg = 
+          '\n'
+        + 'For administration commands, see **[help: admin]**\n'
+        + 'For commands available for loaded characters, see **[help: character]**\n'
+        + '\n'
+        + 'The following rolls are available without loading a character:\n'
         + '\t**[X]** simple test using X dice, e.g. [12]\n'
         + '\t**[XvY]** opposed test using X dice vs Y dice, e.g. [12v2]\n'
         + '\t**[XTY]** threshold test using X dice and threshold Y, e.g. [12T2]\n'
@@ -231,21 +300,8 @@ function doDisplayHelp (message) {
         + '\t\t**NOTE:** Opposed tests allow modifiers on both dice pools, e.g. [12[3]!v8!]\n'
         + '\t**[get: pastebinId]** load character from the give paste on pastebin.com, e.g. [get: LdJXHX5e], also available as [getChar: LdJXHX5e] and [getCharacter: LdJXHX5e]\n'
         + '\t**[check]** check if you have a character loaded, also available as [checkChar] and [checkCharacter]\n'
-        + '\t**[unload]** unload a loaded character, also available as [unloadChar] and [unloadCharacter]'
-        + '\n'
-        + 'Loading a character allows you to do skills and attributes instead of fixed numbers for dice. If only a single skill and no attribute is used, the test includes the related attribute. '
-        + ' If edge is used to push the limit, your edge dice are automatically added (as long as the roll contains at least one skill or attribute). Examples:\n'
-        + '\t**[perception]** roll your perception + intuition\n'
-        + '\t**[logic+willpowerT3]** roll logic and willpower against a threshold of 3\n'
-        + '\n'
-        + 'Loading a character also allows you to roll initiative:\n'
-        + '\t**[i]** roll initiative (defaults to meat), also available as [init] or [initiative] \n'
-        + '\t**[i meat]** roll meat initiative\n'
-        + '\t**[i astral]** roll astral initiative\n'
-        + '\t**NOTE:** you can add modifiers to your initiative, e.g. [i astral+2d6+4], but the dice must be before the static modifier\n'
-        + '\n'
-        + 'Loading a character also allows you to roll some additional special rolls:\n'
-        + '\t**[aY,C]** omit your dice pool for an availability test to use your charisma + negotiation'
+        + '\t**[unload]** unload a loaded character, also available as [unloadChar] and [unloadCharacter]\n'
+        + '\n';
     /*
         + '\t**[dodge]** alias for [reaction+intuition[physical]]\n'
         + '\t**[judge]** alias for [intuition+charisma]\n'
@@ -297,6 +353,29 @@ function doDisplayHelp (message) {
         + '\t**[spoof command]** alias for [hacking+intuition[sleaze]] (v logic+firewall)\n'
         + '\t**[trace icon]** alias for [computer+intuition[data processing]] (v willpower+sleaze)\n'
     */
+    message.reply(helpmsg);
+}
+
+function doDisplayCharacterHelp (message) {
+    helpmsg = 
+          '\n'
+        + 'Loading a character allows you to do skills and attributes instead of fixed numbers for dice. If only a single skill and no attribute is used, the test includes the related attribute. '
+        + ' If edge is used to push the limit, your edge dice are automatically added (as long as the roll contains at least one skill or attribute). Examples:\n'
+        + '\t**[perception]** roll your perception + intuition\n'
+        + '\t**[perception+willpower]** roll your perception + willpower\n'
+        + '\t**[logic+willpower[4]T3]** roll logic and willpower with a limit of 4 against a threshold of 3\n'
+        + '\t**[logic+willpower!T3]** roll logic and willpower while pushing the limit against a threshold of 3\n'
+        + '\t**[logic+willpower!v8[3]]** roll logic and willpower while pushing the limit against a dice pool of 8 dice with a limit of 3\n'
+        + '\n'
+        + 'Loading a character also allows you to roll initiative:\n'
+        + '\t**[i]** roll initiative (defaults to meat), also available as [init] or [initiative] \n'
+        + '\t**[i meat]** roll meat initiative\n'
+        + '\t**[i astral]** roll astral initiative\n'
+        + '\t**NOTE:** you can add modifiers to your initiative, first giving a dice pool modifier (+/-Xd6) then a static modifier (+/-Y). Either modifier can be omitted. Examples:\n'
+        + '\t\t**[i astral+2d6+4]** roll astral initiative with 2 extra initiative dice and a static bonus of 4\n'
+        + '\n'
+        + 'Loading a character also allows you to roll some additional special rolls:\n'
+        + '\t**[aY,C]** omit your dice pool for an availability test to use your charisma + negotiation';
     message.reply(helpmsg);
 }
 
@@ -671,6 +750,124 @@ function parseRollString(message,rollString,testType) {
     stats.valid = true;
 
     return stats;
+}
+
+/*
+####################################################################################
+#
+# Chat log cleaning
+#
+####################################################################################
+*/
+function nuke (message, abortListener) {
+    if (!abortListener.ended) {
+        message.channel.fetchMessages({ limit: 3 })
+            .then(function (messages) { return messages })
+            .then(messages => {
+                let promises = [];
+                let index = 0;
+                messages.forEach(function (value, key, map) {
+                    promises[index++] = messages.get(key).delete()
+                });
+                if (index > 0) {
+                    // Messages remain to be deleted
+                    Promise.all(promises)
+                        .then(function (obj) {
+                            message.channel.fetchMessages({ limit: 1 })
+                                .then(messages => {
+                                    messages.forEach(function (value, key, map) {
+                                        nuke(messages.get(key), abortListener);;
+                                    });
+                                });
+                        });
+                } else {
+                    // Nuke completed
+
+                }
+            });
+    }
+}
+    
+function doCleanAll (message) {
+    let botCanManage = message.channel.guild.members.get(client.user.id).hasPermission('MANAGE_MESSAGES');
+    let userCanManage = message.channel.guild.members.get(message.author.id).hasPermission('MANAGE_MESSAGES');
+    
+    if (!userCanManage) {
+        message.reply('you need message management permissions to use the [nuke] command')
+    } else if (!botCanManage) {
+        message.reply('I need message management permissions to [nuke] for you')
+    } else {
+        // Ask for confirmation
+        message.reply('are you sure you want to [nuke] the channel messages? [y/n]')
+        awaitingConfirmation[message.author.id] = 'nuke';
+        let confirmationListener = new Discord.MessageCollector(message.channel, function (newmsg) { return newmsg.author.id == message.author.id }, {max: 50, maxMatches: 1});
+
+        // Check the first message
+        confirmationListener.on('collect', function (collectedMessage) {
+            // Nuke confirmed if matching the confirmation pattern
+            if (reConfirm.test(collectedMessage.content)) {
+                // Inform the user
+                let timeout = 30 * 1000;
+                message.reply('the [nuke] will begin in ' + Math.round(timeout / 1000) + ' seconds. Any user with message management permissions can stop it by using [stop], but if it has started then any already deleted messaged are lost.')
+
+                // Set up abort sequence listener
+                let abortListener = new Discord.MessageCollector(message.channel, function (newmsg) {
+                    let userCanManage = newmsg.channel.guild.members.get(newmsg.author.id).hasPermission('MANAGE_MESSAGES');
+                    return userCanManage && reStop.test(newmsg.content);
+                }, { maxMatches: 1 })
+
+                // Set up the nuke countdown listener
+                let countdownListener = new Discord.MessageCollector(message.channel, function () { return false }, { time: timeout });
+
+                // If nuke countdown triggers on time, start the nuking procedure, checking the abort listener for it ending
+                countdownListener.on('end', function (lastMessage, reason) {
+                    if (reason == 'time') {
+                        nuke(message, abortListener);
+                    }
+                });
+
+                // If the abort listener collects a message, stop the countdown as aborted
+                abortListener.on('collect', function (collectedMessage) {
+                    message.reply('the ' + (countdownListener.ended ? 'ongoing ' : '') + '[nuke] was ' + (countdownListener.ended ? 'stopped' : 'aborted') + '.')
+                    countdownListener.stop('aborted');
+                });
+
+            }
+            
+            // Nuke rejected if anything else
+            else {
+                message.reply('you aborted the [nuke]')
+            }
+
+            // In either case, mark as no longer awaiting confirmation
+            delete awaitingConfirmation[message.author.id];
+        });
+    }
+}
+
+function doClean(message) {
+    let botCanManage = message.channel.guild.members.get(client.user.id).hasPermission('MANAGE_MESSAGES');
+    let userCanManage = message.channel.guild.members.get(message.author.id).hasPermission('MANAGE_MESSAGES');
+
+    if (!userCanManage) {
+        message.reply('you need message management permissions to use the [clean] command')
+    } else if (!botCanManage) {
+        message.reply('I need message management permissions to [clean] for you')
+    } else {  
+        let nCleanMax = 50;
+        let nClean = reClean.exec(message);
+        nClean = nClean[1] ? nClean[1] : 10;
+        nClean = Math.min(nCleanMax,nClean);
+        nClean += nClean > 0 ? 1 : 0; // If cleaning anything, include the [clean X] message without counting it
+
+        message.channel.fetchMessages({limit: nClean})
+            .then(messages => {
+                messages.forEach(function(value,key,map) {
+                    messages.get(key).delete()
+                        .catch(console.error);
+                });
+            });
+    }
 }
 
 /*
