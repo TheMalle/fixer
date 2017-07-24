@@ -1,4 +1,4 @@
-const versionId = '0.1.0';
+const versionId = '0.1.1';
 const Discord = require('discord.js');
 var fetch = require('node-fetch');
 var parseString = require('xml2js').parseString;
@@ -415,8 +415,8 @@ function doDisplayGeneralHelp(message) {
         + '\t**[get: pastebinId]** load character from the give paste on pastebin.com, e.g. [get: LdJXHX5e], also available as [getChar: LdJXHX5e] and [getCharacter: LdJXHX5e]\n'
         + '\t**[check]** check if you have a character loaded, also available as [checkChar] and [checkCharacter]\n'
         + '\t**[unload]** unload a loaded character, also available as [unloadChar] and [unloadCharacter]\n'
-        + '\n';
-    + 'Loaded characters will ' + (restrictedMode ? '**not** ' : '') + 'remain accessible if the bot restarts' + (restrictedMode ? ' as it is in restricted mode' : '') + '.';
+        + '\n'
+        + 'Loaded characters will ' + (restrictedMode ? '**not** ' : '') + 'remain accessible if the bot restarts' + (restrictedMode ? ' as it is in restricted mode' : '') + '.';
     /*
         + '\t**[dodge]** alias for [reaction+intuition[physical]]\n'
         + '\t**[judge]** alias for [intuition+charisma]\n'
