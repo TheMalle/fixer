@@ -1,20 +1,15 @@
+const versionId = '0.1.0';
 const Discord = require('discord.js');
 var fetch = require('node-fetch');
 var parseString = require('xml2js').parseString;
-var PastebinAPI = require('pastebin-js');
-const querystring = require('querystring');
-const http = require('http');
+var PastebinAPI = require('better-pastebin');
+const moment = require('moment');
 
-// Parse inputs
-const reAPIKey = /^\-key\=([^\ ]+)$/
-var discordApiKey = '';
-process.argv.forEach(function (val, index, array) {
-    if (reAPIKey.test(val)) {
-        discordApiKey = reAPIKey.exec(val)[1];
-    }
-});
+// Define required and optional inputs
+const reqArgs = ['token', 'paste', 'user', 'password', 'devkey'];
+const optArgs = [];
+var args = {};
 
-var pastebin = new PastebinAPI();
 const client = new Discord.Client();
 const reConfirm = /^\[y\]$/i;
 const reStop = /^\[stop\]$/i;
@@ -28,10 +23,10 @@ const reCheckChar = /^\[\s*check(?:Char(?:acter)?)?\s*\]$/i;
 const reUnloadChar = /^\[\s*unload(?:Char(?:acter)?)?\s*\]$/i;
 const reIsAttribute = /^(Body|Agility|Reaction|Strength|Charisma|Intuition|Logic|Willpower|Edge|Magic|Resonance|Depth)$/i
 const reIsAdditionalCharacterStat = /^()$/i
-const reRollFormat = /^\s*\[\s*([A-z0-9 \+\-]*?[0-9]*)\s*(?:\[(\d+)\])?\s*(!)?\s*(v|a|T)?\s*(\d+)?\s*(?:\[(\d+)\])?\s*(!)?\s*(?:,\s*(\d+))?\s*\]\s*$/
+const reRollFormat = /^\s*\[\s*([A-z0-9 \+\-]*?[0-9]*)\s*(?:\[(\d+)\])?\s*(!)?\s*(v|a|T)?\s*(\d+)?\s*(?:\[(\d+)\])?\s*(!)?\s*(?:,\s*(\d+))?\s*\].*$/
 var characterMap = {};
 var awaitingConfirmation = {};
-var nuking = {};
+var restrictedMode = true;
 
 const attributeMap = {
     'body': 'BOD',
@@ -47,6 +42,7 @@ const attributeMap = {
     'resonance': 'RES',
     'depth': 'DEP'
 }
+
 const attributeShortMap = {
     'BOD': 'body',
     'AGI': 'agility',
@@ -63,88 +59,87 @@ const attributeShortMap = {
 }
 
 const skillTable = {
-    'b52f7575-eebf-41c4-938d-df3397b5ee68': {name: 'aeronauticsmechanic', attribute: 'LOG', default: 'No', group: 'Engineering'},
-    'fc89344f-daa6-438e-b61d-23f10dd13e44': {name: 'alchemy', attribute: 'MAG', default: 'No', group: 'Enchanting'},
-    'e09e5aa7-e496-41a2-97ce-17f577361888': {name: 'animalhandling', attribute: 'CHA', default: 'Yes', group: ''},
-    '74a68a9e-8c5b-4998-8dbb-08c1e768afc3': {name: 'arcana', attribute: 'LOG', default: 'No', group: ''},
-    '1537ca5c-fa93-4c05-b073-a2a0eed91b8e': {name: 'archery', attribute: 'AGI', default: 'Yes', group: ''},
-    'ada6d9b2-e451-4289-be45-7085fa34a51a': {name: 'armorer', attribute: 'LOG', default: 'Yes', group: ''},
-    '955d9376-3066-469d-8670-5170c1d59020': {name: 'artificing', attribute: 'MAG', default: 'No', group: 'Enchanting'},
-    '2f4c706f-5ac5-4774-8a45-3b4667989a20': {name: 'artisan', attribute: 'INT', default: 'No', group: ''},
-    '59318078-e071-411b-9194-7222560e9f4a': {name: 'assensing', attribute: 'INT', default: 'No', group: ''},
-    'b7599a42-ceed-4558-b357-865aa3e317f5': {name: 'astralcombat', attribute: 'WIL', default: 'No', group: ''},
-    '788b387b-ee41-4e6a-bf22-481a8cc4cf9f': {name: 'automatics', attribute: 'AGI', default: 'Yes', group: 'Firearms'},
-    '5e5f2f7f-f63b-4f65-a65d-91b3d4523c6f': {name: 'automotivemechanic', attribute: 'LOG', default: 'No', group: 'Engineering'},
-    '9a2d9175-d445-45ca-842d-90223ad13f05': {name: 'banishing', attribute: 'MAG', default: 'No', group: 'Conjuring'},
-    'dfba7c09-3d95-43fd-be75-39b3e8b22cd3': {name: 'binding', attribute: 'MAG', default: 'No', group: 'Conjuring'},
-    'ba624682-a5c0-4cf5-b47b-1021e6a1800d': {name: 'biotechnology', attribute: 'LOG', default: 'No', group: 'Biotech'},
-    '48763fa5-4b89-48c7-80ff-d0a2761de4c0': {name: 'blades', attribute: 'AGI', default: 'Yes', group: 'Close Combat'},
-    'bd4d977a-cbd4-4289-99bb-896caed6786a': {name: 'chemistry', attribute: 'LOG', default: 'No', group: ''},
-    'cd9f6bf7-fa48-464b-9a8f-c7ce26713a72': {name: 'clubs', attribute: 'AGI', default: 'Yes', group: 'Close Combat'},
-    'f338d383-ffd8-4ff8-b99b-cf4c2ed1b159': {name: 'compiling', attribute: 'RES', default: 'No', group: 'Tasking'},
-    '1c14bf0d-cc69-4126-9a95-1f2429c11aa5': {name: 'computer', attribute: 'LOG', default: 'Yes', group: 'Electronics'},
-    '6d7f48d3-84a1-4fce-90d3-58d566f70fa6': {name: 'con', attribute: 'CHA', default: 'Yes', group: 'Acting'},
-    '3db81bcc-264b-47e1-847c-06bdacd88973': {name: 'counterspelling', attribute: 'MAG', default: 'No', group: 'Sorcery'},
-    '7143f979-aa48-4cc8-a29c-e010400e6e11': {name: 'cybercombat', attribute: 'LOG', default: 'Yes', group: 'Cracking'},
-    '9b386fe5-83b3-436f-9035-efd1c0f7a680': {name: 'cybertechnology', attribute: 'LOG', default: 'No', group: 'Biotech'},
-    '64eed2e9-e61c-4cba-81d4-18a612cf2df6': {name: 'decompiling', attribute: 'RES', default: 'No', group: 'Tasking'},
-    '276877e1-5cdf-4e95-befd-13c1abb5ae02': {name: 'demolitions', attribute: 'LOG', default: 'Yes', group: ''},
-    'a9d9b686-bc4a-4347-b011-ff8f41455965': {name: 'disenchanting', attribute: 'MAG', default: 'No', group: 'Enchanting'},
-    '9b2416b2-3e2b-4dd6-ab9d-530f493c1c22': {name: 'disguise', attribute: 'INT', default: 'Yes', group: 'Stealth'},
-    '23c3320c-5010-4b2e-ac46-76f0a86af0b9': {name: 'diving', attribute: 'BOD', default: 'Yes', group: ''},
-    '2c8e5f20-e52d-4844-89e9-51b92dba47df': {name: 'electronicwarfare', attribute: 'LOG', default: 'No', group: 'Cracking'},
-    '3f93335c-49d6-4904-a97e-4c942ab05b59': {name: 'escapeartist', attribute: 'AGI', default: 'Yes', group: ''},
-    'b20acd11-f102-40f3-a641-e3c420fbdb91': {name: 'etiquette', attribute: 'CHA', default: 'Yes', group: 'Influence'},
-    'a1366ec2-772d-4f08-8c65-5f79464d975b': {name: 'exoticmeleeweapon', attribute: 'AGI', default: 'No', group: ''},
-    '88ee65ba-c797-4f9c-91fe-39bc43b0f9c8': {name: 'exoticrangedweapon', attribute: 'AGI', default: 'No', group: ''},
-    'b5f95b50-e630-4162-a6a4-7dd6ab8d0256': {name: 'pilotexoticvehicle', attribute: 'REA', default: 'No', group: ''},
-    '47cb1e8b-c285-4c54-9aaa-75305ad6dd4f': {name: 'firstaid', attribute: 'LOG', default: 'Yes', group: 'Biotech'},
-    '27db6e2a-a49f-4232-b150-e676b8dacb52': {name: 'flight', attribute: 'AGI', default: 'No', group: 'Athletics'},
-    'c9f52f97-a284-44a7-8af6-802dd3ed554f': {name: 'forgery', attribute: 'LOG', default: 'Yes', group: ''},
-    'f510ccc3-cf95-4461-b2f7-e966daaa5a91': {name: 'free-fall', attribute: 'BOD', default: 'Yes', group: ''},
-    '58452cff-44ea-41c6-a554-28a869149b27': {name: 'gunnery', attribute: 'AGI', default: 'Yes', group: ''},
-    'a9fa961d-07e5-46da-8edc-403ae3e6cc75': {name: 'gymnastics', attribute: 'AGI', default: 'Yes', group: 'Athletics'},
-    'c2bb65f5-4a6b-49bf-9925-ef6434cb6929': {name: 'hacking', attribute: 'LOG', default: 'Yes', group: 'Cracking'},
-    '41e184e0-7273-403a-9300-fa29a1707bf0': {name: 'hardware', attribute: 'LOG', default: 'No', group: 'Electronics'},
-    '64841e6e-9487-4b63-80a1-dcad6eb78179': {name: 'heavyweapons', attribute: 'AGI', default: 'Yes', group: ''},
-    'e7e5a43f-9762-4863-86dc-3fd7799e53a2': {name: 'impersonation', attribute: 'CHA', default: 'Yes', group: 'Acting'},
-    '935621c5-d384-42f2-a740-1fa349fa85a1': {name: 'industrialmechanic', attribute: 'LOG', default: 'No', group: 'Engineering'},
-    '3b34b209-00be-42b8-b4ac-cc7dea08af8a': {name: 'instruction', attribute: 'CHA', default: 'Yes', group: ''},
-    '9de43fad-b365-4e73-bc06-91dd571b858a': {name: 'intimidation', attribute: 'CHA', default: 'Yes', group: ''},
-    '963a548d-c629-4a13-a3e3-31b085a42e20': {name: 'leadership', attribute: 'CHA', default: 'Yes', group: 'Influence'},
-    '09fbc992-9fad-4f2d-ab56-725bac943dc6': {name: 'locksmith', attribute: 'AGI', default: 'No', group: ''},
-    '64088b25-de37-4d71-8800-4a430fde08af': {name: 'longarms', attribute: 'AGI', default: 'Yes', group: 'Firearms'},
-    '938be691-4b3d-49a2-a673-bbf9924ce8f0': {name: 'medicine', attribute: 'LOG', default: 'No', group: 'Biotech'},
-    '48cc79be-f75e-4fe6-8721-7864c9f231f6': {name: 'nauticalmechanic', attribute: 'LOG', default: 'No', group: 'Engineering'},
-    'f8037e7f-d48b-452b-8f66-2e0c36677fea': {name: 'navigation', attribute: 'INT', default: 'Yes', group: 'Outdoors'},
-    '729c9cee-ef8f-492d-aa7f-17ec1bc3816e': {name: 'negotiation', attribute: 'CHA', default: 'Yes', group: 'Influence'},
-    '17fbaafa-8dbb-4f29-9244-5ae1cd4ac42f': {name: 'palming', attribute: 'AGI', default: 'No', group: 'Stealth'},
-    '04e1eb3e-e82d-485b-a7fd-1e677df2a070': {name: 'perception', attribute: 'INT', default: 'Yes', group: ''},
-    '53f96d6a-363b-4c14-be1d-68e74930c67b': {name: 'performance', attribute: 'CHA', default: 'Yes', group: 'Acting'},
-    '3ba9397e-f790-44ca-ae40-15a2356e348d': {name: 'pilotaerospace', attribute: 'REA', default: 'No', group: ''},
-    '10d5c887-a1e5-4cca-8613-3a28f1aab810': {name: 'pilotaircraft', attribute: 'REA', default: 'No', group: ''},
-    'ae91a8a6-80e7-4f52-b9eb-21725a5528a4': {name: 'pilotgroundcraft', attribute: 'REA', default: 'Yes', group: ''},
-    'b8a24d87-465a-4365-9948-038fe1ac62c4': {name: 'pilotwalker', attribute: 'REA', default: 'No', group: ''},
-    '1579818e-af85-47cd-8c9f-2e86e9dc19da': {name: 'pilotwatercraft', attribute: 'REA', default: 'Yes', group: ''},
-    'adf31a50-b228-4e09-a09c-46ab9f5e59a1': {name: 'pistols', attribute: 'AGI', default: 'Yes', group: 'Firearms'},
-    '3a38bbcf-38b0-435b-98f2-4ce8c50e8490': {name: 'registering', attribute: 'RES', default: 'No', group: 'Tasking'},
-    'a6287e62-6a3b-43ce-b6e0-20f3655910e2': {name: 'ritualspellcasting', attribute: 'MAG', default: 'No', group: 'Sorcery'},
-    '1531b2d8-6116-4be4-87b0-232dba1fc447': {name: 'running', attribute: 'STR', default: 'Yes', group: 'Athletics'},
-    '9cff9aa7-d092-4f89-8b7b-3ab835818874': {name: 'sneaking', attribute: 'AGI', default: 'Yes', group: 'Stealth'},
-    'b693f3bf-48dc-4570-9743-d94d14ee698b': {name: 'software', attribute: 'LOG', default: 'No', group: 'Electronics'},
-    'c4367a39-4065-4b1d-aa62-e9dce377e452': {name: 'spellcasting', attribute: 'MAG', default: 'No', group: 'Sorcery'},
-    '51e34c6c-b07f-45f4-8a5e-8f2b617ed32f': {name: 'summoning', attribute: 'MAG', default: 'No', group: 'Conjuring'},
-    '89ee1730-053a-400f-a13a-4fbadae015f0': {name: 'survival', attribute: 'WIL', default: 'Yes', group: 'Outdoors'},
-    '0dbcb9cd-f824-4b5d-a387-90d33318b04c': {name: 'swimming', attribute: 'STR', default: 'Yes', group: 'Athletics'},
-    '867a6fa0-7d98-4cde-83a4-b33dd39de08e': {name: 'throwingweapons', attribute: 'AGI', default: 'Yes', group: ''},
-    '7ed2f3e0-a791-4cb7-ba3e-ac785fdc3d7e': {name: 'tracking', attribute: 'INT', default: 'Yes', group: 'Outdoors'},
-    '4fcd40cb-4b02-4b7e-afcb-f44d46cd5706': {name: 'unarmedcombat', attribute: 'AGI', default: 'Yes', group: 'Close Combat'}
+    'b52f7575-eebf-41c4-938d-df3397b5ee68': { name: 'aeronauticsmechanic', attribute: 'LOG', default: 'No', group: 'Engineering' },
+    'fc89344f-daa6-438e-b61d-23f10dd13e44': { name: 'alchemy', attribute: 'MAG', default: 'No', group: 'Enchanting' },
+    'e09e5aa7-e496-41a2-97ce-17f577361888': { name: 'animalhandling', attribute: 'CHA', default: 'Yes', group: '' },
+    '74a68a9e-8c5b-4998-8dbb-08c1e768afc3': { name: 'arcana', attribute: 'LOG', default: 'No', group: '' },
+    '1537ca5c-fa93-4c05-b073-a2a0eed91b8e': { name: 'archery', attribute: 'AGI', default: 'Yes', group: '' },
+    'ada6d9b2-e451-4289-be45-7085fa34a51a': { name: 'armorer', attribute: 'LOG', default: 'Yes', group: '' },
+    '955d9376-3066-469d-8670-5170c1d59020': { name: 'artificing', attribute: 'MAG', default: 'No', group: 'Enchanting' },
+    '2f4c706f-5ac5-4774-8a45-3b4667989a20': { name: 'artisan', attribute: 'INT', default: 'No', group: '' },
+    '59318078-e071-411b-9194-7222560e9f4a': { name: 'assensing', attribute: 'INT', default: 'No', group: '' },
+    'b7599a42-ceed-4558-b357-865aa3e317f5': { name: 'astralcombat', attribute: 'WIL', default: 'No', group: '' },
+    '788b387b-ee41-4e6a-bf22-481a8cc4cf9f': { name: 'automatics', attribute: 'AGI', default: 'Yes', group: 'Firearms' },
+    '5e5f2f7f-f63b-4f65-a65d-91b3d4523c6f': { name: 'automotivemechanic', attribute: 'LOG', default: 'No', group: 'Engineering' },
+    '9a2d9175-d445-45ca-842d-90223ad13f05': { name: 'banishing', attribute: 'MAG', default: 'No', group: 'Conjuring' },
+    'dfba7c09-3d95-43fd-be75-39b3e8b22cd3': { name: 'binding', attribute: 'MAG', default: 'No', group: 'Conjuring' },
+    'ba624682-a5c0-4cf5-b47b-1021e6a1800d': { name: 'biotechnology', attribute: 'LOG', default: 'No', group: 'Biotech' },
+    '48763fa5-4b89-48c7-80ff-d0a2761de4c0': { name: 'blades', attribute: 'AGI', default: 'Yes', group: 'Close Combat' },
+    'bd4d977a-cbd4-4289-99bb-896caed6786a': { name: 'chemistry', attribute: 'LOG', default: 'No', group: '' },
+    'cd9f6bf7-fa48-464b-9a8f-c7ce26713a72': { name: 'clubs', attribute: 'AGI', default: 'Yes', group: 'Close Combat' },
+    'f338d383-ffd8-4ff8-b99b-cf4c2ed1b159': { name: 'compiling', attribute: 'RES', default: 'No', group: 'Tasking' },
+    '1c14bf0d-cc69-4126-9a95-1f2429c11aa5': { name: 'computer', attribute: 'LOG', default: 'Yes', group: 'Electronics' },
+    '6d7f48d3-84a1-4fce-90d3-58d566f70fa6': { name: 'con', attribute: 'CHA', default: 'Yes', group: 'Acting' },
+    '3db81bcc-264b-47e1-847c-06bdacd88973': { name: 'counterspelling', attribute: 'MAG', default: 'No', group: 'Sorcery' },
+    '7143f979-aa48-4cc8-a29c-e010400e6e11': { name: 'cybercombat', attribute: 'LOG', default: 'Yes', group: 'Cracking' },
+    '9b386fe5-83b3-436f-9035-efd1c0f7a680': { name: 'cybertechnology', attribute: 'LOG', default: 'No', group: 'Biotech' },
+    '64eed2e9-e61c-4cba-81d4-18a612cf2df6': { name: 'decompiling', attribute: 'RES', default: 'No', group: 'Tasking' },
+    '276877e1-5cdf-4e95-befd-13c1abb5ae02': { name: 'demolitions', attribute: 'LOG', default: 'Yes', group: '' },
+    'a9d9b686-bc4a-4347-b011-ff8f41455965': { name: 'disenchanting', attribute: 'MAG', default: 'No', group: 'Enchanting' },
+    '9b2416b2-3e2b-4dd6-ab9d-530f493c1c22': { name: 'disguise', attribute: 'INT', default: 'Yes', group: 'Stealth' },
+    '23c3320c-5010-4b2e-ac46-76f0a86af0b9': { name: 'diving', attribute: 'BOD', default: 'Yes', group: '' },
+    '2c8e5f20-e52d-4844-89e9-51b92dba47df': { name: 'electronicwarfare', attribute: 'LOG', default: 'No', group: 'Cracking' },
+    '3f93335c-49d6-4904-a97e-4c942ab05b59': { name: 'escapeartist', attribute: 'AGI', default: 'Yes', group: '' },
+    'b20acd11-f102-40f3-a641-e3c420fbdb91': { name: 'etiquette', attribute: 'CHA', default: 'Yes', group: 'Influence' },
+    'a1366ec2-772d-4f08-8c65-5f79464d975b': { name: 'exoticmeleeweapon', attribute: 'AGI', default: 'No', group: '' },
+    '88ee65ba-c797-4f9c-91fe-39bc43b0f9c8': { name: 'exoticrangedweapon', attribute: 'AGI', default: 'No', group: '' },
+    'b5f95b50-e630-4162-a6a4-7dd6ab8d0256': { name: 'pilotexoticvehicle', attribute: 'REA', default: 'No', group: '' },
+    '47cb1e8b-c285-4c54-9aaa-75305ad6dd4f': { name: 'firstaid', attribute: 'LOG', default: 'Yes', group: 'Biotech' },
+    '27db6e2a-a49f-4232-b150-e676b8dacb52': { name: 'flight', attribute: 'AGI', default: 'No', group: 'Athletics' },
+    'c9f52f97-a284-44a7-8af6-802dd3ed554f': { name: 'forgery', attribute: 'LOG', default: 'Yes', group: '' },
+    'f510ccc3-cf95-4461-b2f7-e966daaa5a91': { name: 'free-fall', attribute: 'BOD', default: 'Yes', group: '' },
+    '58452cff-44ea-41c6-a554-28a869149b27': { name: 'gunnery', attribute: 'AGI', default: 'Yes', group: '' },
+    'a9fa961d-07e5-46da-8edc-403ae3e6cc75': { name: 'gymnastics', attribute: 'AGI', default: 'Yes', group: 'Athletics' },
+    'c2bb65f5-4a6b-49bf-9925-ef6434cb6929': { name: 'hacking', attribute: 'LOG', default: 'Yes', group: 'Cracking' },
+    '41e184e0-7273-403a-9300-fa29a1707bf0': { name: 'hardware', attribute: 'LOG', default: 'No', group: 'Electronics' },
+    '64841e6e-9487-4b63-80a1-dcad6eb78179': { name: 'heavyweapons', attribute: 'AGI', default: 'Yes', group: '' },
+    'e7e5a43f-9762-4863-86dc-3fd7799e53a2': { name: 'impersonation', attribute: 'CHA', default: 'Yes', group: 'Acting' },
+    '935621c5-d384-42f2-a740-1fa349fa85a1': { name: 'industrialmechanic', attribute: 'LOG', default: 'No', group: 'Engineering' },
+    '3b34b209-00be-42b8-b4ac-cc7dea08af8a': { name: 'instruction', attribute: 'CHA', default: 'Yes', group: '' },
+    '9de43fad-b365-4e73-bc06-91dd571b858a': { name: 'intimidation', attribute: 'CHA', default: 'Yes', group: '' },
+    '963a548d-c629-4a13-a3e3-31b085a42e20': { name: 'leadership', attribute: 'CHA', default: 'Yes', group: 'Influence' },
+    '09fbc992-9fad-4f2d-ab56-725bac943dc6': { name: 'locksmith', attribute: 'AGI', default: 'No', group: '' },
+    '64088b25-de37-4d71-8800-4a430fde08af': { name: 'longarms', attribute: 'AGI', default: 'Yes', group: 'Firearms' },
+    '938be691-4b3d-49a2-a673-bbf9924ce8f0': { name: 'medicine', attribute: 'LOG', default: 'No', group: 'Biotech' },
+    '48cc79be-f75e-4fe6-8721-7864c9f231f6': { name: 'nauticalmechanic', attribute: 'LOG', default: 'No', group: 'Engineering' },
+    'f8037e7f-d48b-452b-8f66-2e0c36677fea': { name: 'navigation', attribute: 'INT', default: 'Yes', group: 'Outdoors' },
+    '729c9cee-ef8f-492d-aa7f-17ec1bc3816e': { name: 'negotiation', attribute: 'CHA', default: 'Yes', group: 'Influence' },
+    '17fbaafa-8dbb-4f29-9244-5ae1cd4ac42f': { name: 'palming', attribute: 'AGI', default: 'No', group: 'Stealth' },
+    '04e1eb3e-e82d-485b-a7fd-1e677df2a070': { name: 'perception', attribute: 'INT', default: 'Yes', group: '' },
+    '53f96d6a-363b-4c14-be1d-68e74930c67b': { name: 'performance', attribute: 'CHA', default: 'Yes', group: 'Acting' },
+    '3ba9397e-f790-44ca-ae40-15a2356e348d': { name: 'pilotaerospace', attribute: 'REA', default: 'No', group: '' },
+    '10d5c887-a1e5-4cca-8613-3a28f1aab810': { name: 'pilotaircraft', attribute: 'REA', default: 'No', group: '' },
+    'ae91a8a6-80e7-4f52-b9eb-21725a5528a4': { name: 'pilotgroundcraft', attribute: 'REA', default: 'Yes', group: '' },
+    'b8a24d87-465a-4365-9948-038fe1ac62c4': { name: 'pilotwalker', attribute: 'REA', default: 'No', group: '' },
+    '1579818e-af85-47cd-8c9f-2e86e9dc19da': { name: 'pilotwatercraft', attribute: 'REA', default: 'Yes', group: '' },
+    'adf31a50-b228-4e09-a09c-46ab9f5e59a1': { name: 'pistols', attribute: 'AGI', default: 'Yes', group: 'Firearms' },
+    '3a38bbcf-38b0-435b-98f2-4ce8c50e8490': { name: 'registering', attribute: 'RES', default: 'No', group: 'Tasking' },
+    'a6287e62-6a3b-43ce-b6e0-20f3655910e2': { name: 'ritualspellcasting', attribute: 'MAG', default: 'No', group: 'Sorcery' },
+    '1531b2d8-6116-4be4-87b0-232dba1fc447': { name: 'running', attribute: 'STR', default: 'Yes', group: 'Athletics' },
+    '9cff9aa7-d092-4f89-8b7b-3ab835818874': { name: 'sneaking', attribute: 'AGI', default: 'Yes', group: 'Stealth' },
+    'b693f3bf-48dc-4570-9743-d94d14ee698b': { name: 'software', attribute: 'LOG', default: 'No', group: 'Electronics' },
+    'c4367a39-4065-4b1d-aa62-e9dce377e452': { name: 'spellcasting', attribute: 'MAG', default: 'No', group: 'Sorcery' },
+    '51e34c6c-b07f-45f4-8a5e-8f2b617ed32f': { name: 'summoning', attribute: 'MAG', default: 'No', group: 'Conjuring' },
+    '89ee1730-053a-400f-a13a-4fbadae015f0': { name: 'survival', attribute: 'WIL', default: 'Yes', group: 'Outdoors' },
+    '0dbcb9cd-f824-4b5d-a387-90d33318b04c': { name: 'swimming', attribute: 'STR', default: 'Yes', group: 'Athletics' },
+    '867a6fa0-7d98-4cde-83a4-b33dd39de08e': { name: 'throwingweapons', attribute: 'AGI', default: 'Yes', group: '' },
+    '7ed2f3e0-a791-4cb7-ba3e-ac785fdc3d7e': { name: 'tracking', attribute: 'INT', default: 'Yes', group: 'Outdoors' },
+    '4fcd40cb-4b02-4b7e-afcb-f44d46cd5706': { name: 'unarmedcombat', attribute: 'AGI', default: 'Yes', group: 'Close Combat' }
 }
 
 // TODO: Implement armor as an attribute so you can roll body+armor
 // TODO: Implement [!] to spend edge to reroll the latest roll
 // TODO: Implement [push] to spend edge to push the limit on the previous roll
-// TODO: Implement support for saving characters
 // TODO: Implement support for multiple characters
 // TODO: Implement limit keywords
 // TODO: Implement macros
@@ -152,28 +147,6 @@ const skillTable = {
 // TODO: Extended tests [e]
 // TODO: Damage rolls
 // TODO: Essence as additional character statistic
-// TODO: [clear] / [nuke] to remove messages from channel
-
-// [perception+willpower+2[5]!]
-// [perception+willpower+2[5]!v12(5)!]
-// [perception+willpower+2[5]!a12,1000]
-// [perception+willpower+2[5]!T3]
-// 
-/*
-^                       start of line
-\[\s*                   [
-([A-z0-9 \+\-]*?[0-9]*) captures perception+willpower+2
-(?:\[(\d+)\])?          captures limit, if existent
-(!)?                    captures pushing the limit, if existent
-(v|a|T)?                captures the test type, if specified
-(\d+)?                  captures the secondary dice, if specified
-(?:\[(\d+)\])?          captures limit, if existent
-(!)?                    captures pushing the limit, if existent
-(?:,\s*(\d+))?          captures secondary value, if existent
-\]\s*                   ]
-$                       end of line
-*/
-
 
 /*
 ####################################################################################
@@ -183,11 +156,40 @@ $                       end of line
 ####################################################################################
 */
 
+// Allocate inputs
+reqArgs.forEach(function (e) {
+    args[e] = '';
+});
+optArgs.forEach(function (e) {
+    args[e] = '';
+});
+
+// Parse inputs
+process.argv.forEach(function (val, index, array) {
+    for (var i = 0; i < reqArgs.length; i++) {
+        let reArg = new RegExp('\-\(' + reqArgs[i] + '\)\=([^\ ]+)');
+        if (reArg.test(val)) {
+            let matches = reArg.exec(val);
+            args[matches[1]] = matches[2];
+        }
+    }
+});
+
+// Check all required inputs exist
+reqArgs.forEach(function (e) {
+    if (args[e] == '') {
+        console.log('Missing input argument: ' + e);
+        return false;
+    }
+});
+
+// Action when ready
 client.on('ready', () => {
-    client.user.setGame('SR5e, type [help] for help');
+    client.user.setGame((restrictedMode ? '(R) ' : '') + 'type [help] for help');
     console.log('I am ready!');
 });
 
+// Message parsing
 client.on('message', message => {
 
     // If it's not a message from this bot
@@ -202,28 +204,28 @@ client.on('message', message => {
         // Stop ongoing action
         else if (reStop.test(message.content)) {
             // This uses listeners to perform the correct action
-        } 
+        }
 
         // Help commands
         else if (reHelp.test(message.content)) {
             doDisplayHelp(message);
-        } 
+        }
 
         // Clean
         else if (reClean.test(message.content)) {
             doClean(message);
-        } 
+        }
 
         // Nuke
         else if (reNuke.test(message.content)) {
             doCleanAll(message);
-        } 
-        
+        }
+
         // Get character
         else if (reGetChar.test(message.content)) {
             doLoadCharacter(message);
-        } 
-        
+        }
+
         // Check character
         else if (reCheckChar.test(message.content)) {
             doCheckCharacter(message);
@@ -244,9 +246,120 @@ client.on('message', message => {
             doGeneralRoll(message);
         }
     }
-}); 
+});
 
-client.login(discordApiKey);
+// Check access to pastebin before logging in
+PastebinAPI.setDevKey(args.devkey);
+PastebinAPI.login(args.user, args.password, function (success, data) {
+    if (!success) {
+        // Failed to log in -> run in restricted mode
+        console.log('Failed to login to pastebin');
+        discordLogin(args.token);
+    }
+
+    else {
+        // Log in successful -> attempt to read designated paste
+        console.log('Successfully logged in to pastebin as user:' + args.user);
+
+        PastebinAPI.get(args.paste, function (success, pastedata) {
+            if (!success) {
+                // Failed to read paste -> run in restricted mode
+                console.log('Could not establish connection to paste ' + args.paste);
+                discordLogin(args.token);
+            }
+
+            else {
+                // Successfully read paste -> get list of pastes to check against
+                console.log('Successfully read paste ' + args.paste);
+                let pasteLimit = 50;
+                PastebinAPI.list(pasteLimit, function (success, data) {
+                    // NOTE! If no pastes found, then the callback will come TWICE! Once with no data, once with a data of length 0.
+                    if (!success) {
+                        // Failed to list pastes -> run in restricted mode
+                        console.log('Could not verify rights to paste');
+                        discordLogin(args.token);
+                    } else if (!data) {
+                        // Failed to find any pastes -> DO NOTHING, leave that to the second callback
+                    } else {
+                        if (data.length == 0) {
+                            // Failed to find any pastes -> run in restricted mode
+                            console.log('Could not find any pastes belonging to the user');
+                            discordLogin(args.token);
+                        }
+
+                        else {
+                            // Successfully listed pastes -> check given paste against them
+                            console.log('Successfully listed ' + data.length + ' paste' + (data.length > 1 ? 's' : '') + ' belonging to user');
+                            let hasPaste = false;
+                            data.forEach(function (e) {
+                                if (e.paste_key == args.paste) {
+                                    hasPaste = true;
+                                }
+                            });
+                            if (!hasPaste) {
+                                // User is not owner of designated paste -> run in restricted mode
+                                console.log('Could not verify that paste belongs to user');
+                                discordLogin(args.token);
+                            }
+
+                            else {
+                                // User verified as owner of designated paste -> use data from paste and start regular mode
+                                console.log('Successfully verified paste as belonging to user');
+                                restrictedMode = false;
+                                loadData(pastedata);
+                                discordLogin(args.token);
+                            }
+                        }
+                    };
+                });
+            }
+        });
+    }
+});
+
+/*
+####################################################################################
+#
+# Logging in to discord
+#
+####################################################################################
+*/
+function discordLogin(token) {
+    console.log('Starting up in ' + (restrictedMode ? 'restricted' : 'regular') + ' mode...');
+    client.login(token);
+}
+
+/*
+####################################################################################
+#
+# Saving and loading information
+#
+####################################################################################
+*/
+
+function saveData(message) {
+    if (!restrictedMode) {
+        // Login to pastebin
+        PastebinAPI.login(args.user, args.password, function (success, data) {
+            // Edit paste
+            PastebinAPI.edit(args.paste, { contents: JSON.stringify(characterMap), expires: 'N' }, function (success, data) {
+                if (!success) {
+                    // If the save failed, notify user
+                    message.reply('there was an error attempting to backup the data!')
+                }
+
+                else {
+                    // Otherwise just print to the log
+                    console.log('Saved data at ' + currentDateTime());
+                }
+            });
+        });
+    }
+}
+
+function loadData(json) {
+    characterMap = JSON.parse(json);
+}
 
 /*
 ####################################################################################
@@ -255,7 +368,7 @@ client.login(discordApiKey);
 #
 ####################################################################################
 */
-function doDisplayHelp (message) {
+function doDisplayHelp(message) {
     let arg = reHelp.exec(message)[1];
     arg = arg ? stringCondenseLower(arg) : '';
     if (arg == '') {
@@ -271,9 +384,9 @@ function doDisplayHelp (message) {
     }
 }
 
-function doDisplayAdminHelp (message) {
-    let helpmsg = 
-          '\n'
+function doDisplayAdminHelp(message) {
+    let helpmsg =
+        '\n'
         + 'The following administration commands are available:\n'
         + '\t**[clean X]** remove the last X messages in the channel. Maximum of 50. Defaults to 10 if omitted.\n'
         + '\t**[nuke]** remove all messages from the channel (requires confirmation; can take significant amount of time).\n'
@@ -283,9 +396,10 @@ function doDisplayAdminHelp (message) {
     message.reply(helpmsg);
 }
 
-function doDisplayGeneralHelp (message) {
-    let helpmsg = 
-          '\n'
+function doDisplayGeneralHelp(message) {
+    let helpmsg =
+        '\n'
+        + 'This is Fixer ' + versionId + (restrictedMode ? ' (restricted mode)' : '') + '\n'
         + 'For administration commands, see **[help: admin]**\n'
         + 'For commands available for loaded characters, see **[help: character]**\n'
         + '\n'
@@ -302,6 +416,7 @@ function doDisplayGeneralHelp (message) {
         + '\t**[check]** check if you have a character loaded, also available as [checkChar] and [checkCharacter]\n'
         + '\t**[unload]** unload a loaded character, also available as [unloadChar] and [unloadCharacter]\n'
         + '\n';
+    + 'Loaded characters will ' + (restrictedMode ? '**not** ' : '') + 'remain accessible if the bot restarts' + (restrictedMode ? ' as it is in restricted mode' : '') + '.';
     /*
         + '\t**[dodge]** alias for [reaction+intuition[physical]]\n'
         + '\t**[judge]** alias for [intuition+charisma]\n'
@@ -356,9 +471,9 @@ function doDisplayGeneralHelp (message) {
     message.reply(helpmsg);
 }
 
-function doDisplayCharacterHelp (message) {
-    helpmsg = 
-          '\n'
+function doDisplayCharacterHelp(message) {
+    helpmsg =
+        '\n'
         + 'Loading a character allows you to do skills and attributes instead of fixed numbers for dice. If only a single skill and no attribute is used, the test includes the related attribute. '
         + ' If edge is used to push the limit, your edge dice are automatically added (as long as the roll contains at least one skill or attribute). Examples:\n'
         + '\t**[perception]** roll your perception + intuition\n'
@@ -399,11 +514,11 @@ function doGeneralRoll(message) {
     let secondaryValue = rollParts[8] ? rollParts[8] : '';
 
     // Validate roll string and get roll statistics
-    let rollStats = parseRollString(message,rollString,testType);;
+    let rollStats = parseRollString(message, rollString, testType);;
     if (!rollStats.valid) { return };
     let nDice = rollStats.dice;
     let edge = rollStats.edge;
-    
+
     // validate other inputs based on test type
 
     /*
@@ -418,10 +533,10 @@ function doGeneralRoll(message) {
     */
     if (stringCondenseLower(testType) === '') {
 
-        if (!messageAssert(message,!secondaryDice,'invalid input for a simple test (did not expect secondary dice pool)')) { return };
-        if (!messageAssert(message,!secondaryLimit,'invalid input for a simple test (did not expect secondary limit)')) { return };
-        if (!messageAssert(message,!secondaryPush,'invalid input for a simple test (did not expect secondary push the limit)')) { return };
-        if (!messageAssert(message,!secondaryValue,'invalid input for a simple test (did not expect secondary value)')) { return };
+        if (!messageAssert(message, !secondaryDice, 'invalid input for a simple test (did not expect secondary dice pool)')) { return };
+        if (!messageAssert(message, !secondaryLimit, 'invalid input for a simple test (did not expect secondary limit)')) { return };
+        if (!messageAssert(message, !secondaryPush, 'invalid input for a simple test (did not expect secondary push the limit)')) { return };
+        if (!messageAssert(message, !secondaryValue, 'invalid input for a simple test (did not expect secondary value)')) { return };
     }
 
     /*
@@ -436,10 +551,10 @@ function doGeneralRoll(message) {
     */
     else if (stringCondenseLower(testType) === 't') {
 
-        if (!messageAssert(message,secondaryDice,'invalid input for a threshold test (expected secondary dice pool)')) { return };
-        if (!messageAssert(message,!secondaryLimit,'invalid input for a threshold test (did not expect secondary limit)')) { return };
-        if (!messageAssert(message,!secondaryPush,'invalid input for a threshold test (did not expect secondary push the limit)')) { return };
-        if (!messageAssert(message,!secondaryValue,'invalid input for a threshold test (did not expect secondary value)')) { return };
+        if (!messageAssert(message, secondaryDice, 'invalid input for a threshold test (expected secondary dice pool)')) { return };
+        if (!messageAssert(message, !secondaryLimit, 'invalid input for a threshold test (did not expect secondary limit)')) { return };
+        if (!messageAssert(message, !secondaryPush, 'invalid input for a threshold test (did not expect secondary push the limit)')) { return };
+        if (!messageAssert(message, !secondaryValue, 'invalid input for a threshold test (did not expect secondary value)')) { return };
     }
 
     /*
@@ -451,8 +566,8 @@ function doGeneralRoll(message) {
         Secondary value
     */
     else if (stringCondenseLower(testType) === 'v') {
-        if (!messageAssert(message,secondaryDice,'invalid input for an opposed test (expected secondary dice pool)')) { return };
-        if (!messageAssert(message,!secondaryValue,'invalid input for an opposed test (did not expect secondary value)')) { return };
+        if (!messageAssert(message, secondaryDice, 'invalid input for an opposed test (expected secondary dice pool)')) { return };
+        if (!messageAssert(message, !secondaryValue, 'invalid input for an opposed test (did not expect secondary value)')) { return };
     }
 
     /*
@@ -465,11 +580,11 @@ function doGeneralRoll(message) {
         Secondary push
     */
     else if (stringCondenseLower(testType) === 'a') {
-        if (!messageAssert(message,secondaryDice,'invalid input for an availability test (expected secondary dice pool)')) { return };
-        if (!messageAssert(message,!secondaryLimit,'invalid input for an availability test (did not expect secondary limit)')) { return };
-        if (!messageAssert(message,!secondaryPush,'invalid input for an availability test (did not expect secondary push the limit)')) { return };
+        if (!messageAssert(message, secondaryDice, 'invalid input for an availability test (expected secondary dice pool)')) { return };
+        if (!messageAssert(message, !secondaryLimit, 'invalid input for an availability test (did not expect secondary limit)')) { return };
+        if (!messageAssert(message, !secondaryPush, 'invalid input for an availability test (did not expect secondary push the limit)')) { return };
     }
-    
+
     // Not a valid test
     else {
         return;
@@ -479,72 +594,72 @@ function doGeneralRoll(message) {
     if (!limit && rollStats.limit) { limit = rollStats.limit };
 
     // With validated inputs, perform the actual test type
-    if (stringCondenseLower(testType) === '') { doSimpleTest(message,nDice,limit,pushTheLimit,edge) }
-    else if (stringCondenseLower(testType) === 't') { doThresholdTest(message,nDice,limit,pushTheLimit,secondaryDice,edge)  }
-    else if (stringCondenseLower(testType) === 'v') { doOpposedTest(message,nDice,limit,pushTheLimit,secondaryDice,secondaryLimit,secondaryPush,edge)  }
-    else if (stringCondenseLower(testType) === 'a') { doAvailabilityTest(message,nDice,limit,pushTheLimit,secondaryDice,secondaryValue,edge) }
+    if (stringCondenseLower(testType) === '') { doSimpleTest(message, nDice, limit, pushTheLimit, edge) }
+    else if (stringCondenseLower(testType) === 't') { doThresholdTest(message, nDice, limit, pushTheLimit, secondaryDice, edge) }
+    else if (stringCondenseLower(testType) === 'v') { doOpposedTest(message, nDice, limit, pushTheLimit, secondaryDice, secondaryLimit, secondaryPush, edge) }
+    else if (stringCondenseLower(testType) === 'a') { doAvailabilityTest(message, nDice, limit, pushTheLimit, secondaryDice, secondaryValue, edge) }
 }
 
-function doSimpleTest (message,nDice,limit,pushTheLimit,edge) {
-    var dc = new DiceCode(nDice,limit,pushTheLimit,(pushTheLimit ? edge : 0));
+function doSimpleTest(message, nDice, limit, pushTheLimit, edge) {
+    var dc = new DiceCode(nDice, limit, pushTheLimit, (pushTheLimit ? edge : 0));
     var roll = rollDice(dc);
     message.reply('**' + roll.hits + '** hit' + (roll.hits == 1 ? '' : 's') + ' (' + roll.roll + (roll.limitUsed == true ? '; limit ' + roll.limit + ' exceeded' : '') + ')');
 }
 
-function doThresholdTest (message,nDice,limit,pushTheLimit,secondaryDice,edge) {
-    var dc = new DiceCode(nDice,limit,pushTheLimit,(pushTheLimit ? edge : 0));
+function doThresholdTest(message, nDice, limit, pushTheLimit, secondaryDice, edge) {
+    var dc = new DiceCode(nDice, limit, pushTheLimit, (pushTheLimit ? edge : 0));
     var roll = rollDice(dc);
     var threshold = secondaryDice;
     var margin = roll.hits - threshold;
     message.reply((margin >= 0 ? '**success**' : '**failure**') + ' (' + roll.roll + '; margin: **' + margin + '**)');
 }
 
-function doOpposedTest (message,nDice,limit,pushTheLimit,secondaryDice,secondaryLimit,secondaryPush,edge) {
-    var dc1 = new DiceCode(nDice,limit,pushTheLimit,(pushTheLimit ? edge : 0));
-    var dc2 = new DiceCode(secondaryDice,secondaryLimit,secondaryPush,0);
+function doOpposedTest(message, nDice, limit, pushTheLimit, secondaryDice, secondaryLimit, secondaryPush, edge) {
+    var dc1 = new DiceCode(nDice, limit, pushTheLimit, (pushTheLimit ? edge : 0));
+    var dc2 = new DiceCode(secondaryDice, secondaryLimit, secondaryPush, 0);
     var roll1 = rollDice(dc1);
     var roll2 = rollDice(dc2);
     var netHits = roll1.hits - roll2.hits;
     message.reply('**' + netHits + '** net hit' + (netHits == 1 ? '' : 's')
-                + ' (' 
-                + '**' + roll1.hits + '** hit' + (roll1.hits == 1 ? '' : 's') + ' (' + roll1.roll + (roll1.limitUsed == true ? '; limit ' + roll1.limit + ' exceeded' : '') + ')' 
-                + ' vs ' 
-                + '**' + roll2.hits + '** hit' + (roll2.hits == 1 ? '' : 's') + ' (' + roll2.roll + (roll2.limitUsed == true ? '; limit ' + roll2.limit + ' exceeded' : '') + ')' 
-                + ')');
+        + ' ('
+        + '**' + roll1.hits + '** hit' + (roll1.hits == 1 ? '' : 's') + ' (' + roll1.roll + (roll1.limitUsed == true ? '; limit ' + roll1.limit + ' exceeded' : '') + ')'
+        + ' vs '
+        + '**' + roll2.hits + '** hit' + (roll2.hits == 1 ? '' : 's') + ' (' + roll2.roll + (roll2.limitUsed == true ? '; limit ' + roll2.limit + ' exceeded' : '') + ')'
+        + ')');
 }
 
-function doAvailabilityTest (message,nDice,limit,pushTheLimit,secondaryDice,secondaryValue,edge) {
-    var dc1 = new DiceCode(nDice,limit,pushTheLimit,(pushTheLimit ? edge : 0));
-    var dc2 = new DiceCode(secondaryDice,null,null,0);
+function doAvailabilityTest(message, nDice, limit, pushTheLimit, secondaryDice, secondaryValue, edge) {
+    var dc1 = new DiceCode(nDice, limit, pushTheLimit, (pushTheLimit ? edge : 0));
+    var dc2 = new DiceCode(secondaryDice, null, null, 0);
     var roll1 = rollDice(dc1);
     var roll2 = rollDice(dc2);
     var netHits = roll1.hits - roll2.hits;
-    
-    let availTime = getAvailabilityTime(netHits,secondaryValue);
+
+    let availTime = getAvailabilityTime(netHits, secondaryValue);
 
     message.reply('item is **' + (availTime.available ? '' : 'un') + 'available** ' + (availTime.available ? 'in ' + availTime.string : '')
-                + ' (' 
-                + '**' + roll1.hits + '** hit' + (roll1.hits == 1 ? '' : 's') + ' (' + roll1.roll + (roll1.limitUsed == true ? '; limit ' + roll1.limit + ' exceeded' : '') + ')' 
-                + ' vs ' 
-                + '**' + roll2.hits + '** hit' + (roll2.hits == 1 ? '' : 's') + ' (' + roll2.roll + (roll2.limitUsed == true ? '; limit ' + roll2.limit + ' exceeded' : '') + ')' 
-                + ')');
+        + ' ('
+        + '**' + roll1.hits + '** hit' + (roll1.hits == 1 ? '' : 's') + ' (' + roll1.roll + (roll1.limitUsed == true ? '; limit ' + roll1.limit + ' exceeded' : '') + ')'
+        + ' vs '
+        + '**' + roll2.hits + '** hit' + (roll2.hits == 1 ? '' : 's') + ' (' + roll2.roll + (roll2.limitUsed == true ? '; limit ' + roll2.limit + ' exceeded' : '') + ')'
+        + ')');
 }
 
-function getAvailabilityTime(netHits,value) {
+function getAvailabilityTime(netHits, value) {
     let baseTime = null;
     if (!value) { }
     else if (value > 100000) { baseTime = 28 }
     else if (value > 10000) { baseTime = 7 }
     else if (value > 1000) { baseTime = 2 }
-    else if (value > 100 ) { baseTime = 1 }
+    else if (value > 100) { baseTime = 1 }
     else { baseTime = 0.25 };
 
     let timeFactor = 2;
     if (netHits < 0) { timeFactor = -1 }
-    else if (netHits > 0) { timeFactor = 1/netHits }
+    else if (netHits > 0) { timeFactor = 1 / netHits }
 
     let totalTime = null;
-    if (baseTime && timeFactor) { totalTime = baseTime*timeFactor }
+    if (baseTime && timeFactor) { totalTime = baseTime * timeFactor }
 
     let timeString = 'unavailable';
     if (!totalTime) {
@@ -554,40 +669,40 @@ function getAvailabilityTime(netHits,value) {
         else if (netHits == 3) { timeString = 'a third of the base time' }
         else if (netHits == 4) { timeString = 'a quarter of the base time' }
         else if (netHits == 5) { timeString = 'a fifth of the base time' }
-        else if (netHits > 5)  { timeString = '1/' + netHits + ' of the base time'}
+        else if (netHits > 5) { timeString = '1/' + netHits + ' of the base time' }
     } else {
         if (totalTime > 0) {
             timeString = '';
             remTime = totalTime;
             let firstString = true;
             if (remTime >= 28) {
-                timeString += (firstString ? '' : ', ' ) + Math.floor(remTime/28) + ' month' + (Math.floor(remTime/28) > 1 ? 's' : '');
+                timeString += (firstString ? '' : ', ') + Math.floor(remTime / 28) + ' month' + (Math.floor(remTime / 28) > 1 ? 's' : '');
                 remTime = remTime % 28;
                 firstString = false;
             }
             if (remTime >= 7) {
-                timeString += (firstString ? '' : ', ' ) + Math.floor(remTime/7) + ' week' + (Math.floor(remTime/7) > 1 ? 's' : '');
+                timeString += (firstString ? '' : ', ') + Math.floor(remTime / 7) + ' week' + (Math.floor(remTime / 7) > 1 ? 's' : '');
                 remTime = remTime % 7;
                 firstString = false;
             }
             if (remTime >= 1) {
-                timeString += (firstString ? '' : ', ' ) + Math.floor(remTime) + ' day' + (Math.floor(remTime) > 1 ? 's' : '');
+                timeString += (firstString ? '' : ', ') + Math.floor(remTime) + ' day' + (Math.floor(remTime) > 1 ? 's' : '');
                 remTime = remTime % 1;
                 firstString = false;
             }
-            if (remTime >= 1/24) {
-                timeString += (firstString ? '' : ', ' ) + Math.floor(remTime*24) + ' hour' + (Math.floor(remTime*24) > 1 ? 's' : '');
-                remTime = remTime % (1/24);
+            if (remTime >= 1 / 24) {
+                timeString += (firstString ? '' : ', ') + Math.floor(remTime * 24) + ' hour' + (Math.floor(remTime * 24) > 1 ? 's' : '');
+                remTime = remTime % (1 / 24);
                 firstString = false;
             }
             if (remTime >= 1e-4) {
-                timeString += (firstString ? '' : ', ' ) + Math.floor(remTime*24*60) + ' minute' + (Math.floor(remTime*24*60) > 1 ? 's' : '');
+                timeString += (firstString ? '' : ', ') + Math.floor(remTime * 24 * 60) + ' minute' + (Math.floor(remTime * 24 * 60) > 1 ? 's' : '');
                 firstString = false;
             }
         }
     }
 
-    let result = {'factor': timeFactor, 'total': totalTime, 'string': timeString, 'available': timeFactor>0 }
+    let result = { 'factor': timeFactor, 'total': totalTime, 'string': timeString, 'available': timeFactor > 0 }
     return result;
 }
 
@@ -612,9 +727,9 @@ function doInitiativeRoll(message) {
     let baseDice = characterMap[message.author.id][message.channel.id].initiative[initType].dice;
     let baseMod = characterMap[message.author.id][message.channel.id].initiative[initType].base;
 
-    let totalDice = Math.max(0,Math.min(5,baseDice+bonusDice));
+    let totalDice = Math.max(0, Math.min(5, baseDice + bonusDice));
 
-    let dc = new DiceCode(totalDice,false,null,null);
+    let dc = new DiceCode(totalDice, false, null, null);
     let roll = rollDice(dc);
 
     let totalMod = baseMod + bonusMod;
@@ -623,7 +738,7 @@ function doInitiativeRoll(message) {
     message.reply('rolled **' + initType + ' initiative** for **' + result + '** (' + roll.roll + '; ' + (totalMod < 0 ? totalMod : '+' + totalMod) + ')');
 }
 
-function parseRollString(message,rollString,testType) {
+function parseRollString(message, rollString, testType) {
     let stats = {
         'valid': false,
         'dice': null,
@@ -659,49 +774,49 @@ function parseRollString(message,rollString,testType) {
     let nAttributes = 0;
     let nStats = 0;
     let nDice = 0;
-    
-    for (var ii=0; ii < rollParts.length; ii++) {
+
+    for (var ii = 0; ii < rollParts.length; ii++) {
         // Get the current term in the roll string
         let term = rollParts[ii];
 
         // Check if a sign was used (if so, remove it), otherwise just it as positive
         let sign = 1;
-        if (term.substr(0,1) == '+') {
+        if (term.substr(0, 1) == '+') {
             term = term.substr(1);
-        } else if (term.substr(0,1) == '-') {
+        } else if (term.substr(0, 1) == '-') {
             term = term.substr(1);
             sign = -1;
-        }        
+        }
 
         // Check if the term is a number
         if (parseInt(term)) {
-            nDice += sign*parseInt(term);
+            nDice += sign * parseInt(term);
         }
 
         // Otherwise, is it a skill?
-        else if (isSkill(term)) { 
+        else if (isSkill(term)) {
             // Validate
-            if (!messageAssert(message,hasCharacter(message),'you need to load a character to use skill rolls (skill "' + term + '" detected in roll)')) { return stats };
+            if (!messageAssert(message, hasCharacter(message), 'you need to load a character to use skill rolls (skill "' + term + '" detected in roll)')) { return stats };
             // Count up number of skills and accumulate dice from rating
             nSkills += 1;
             let skill = characterMap[message.author.id][message.channel.id].activeSkills[term];
-            nDice += sign*Math.max(0,skill.totalDice - skill.attributeTotal);
+            nDice += sign * Math.max(0, skill.totalDice - skill.attributeTotal);
         }
 
         // Otherwise, is it an attribute?
-        else if (isAttribute(term)) { 
-            if (!messageAssert(message,hasCharacter(message),'you need to load a character to use attribute rolls (attribute "' + term + '" detected in roll)')) { return stats };
+        else if (isAttribute(term)) {
+            if (!messageAssert(message, hasCharacter(message), 'you need to load a character to use attribute rolls (attribute "' + term + '" detected in roll)')) { return stats };
             nAttributes += 1;
-            nDice += sign*characterMap[message.author.id][message.channel.id].attributes[attributeMap[term]].totalValue;
+            nDice += sign * characterMap[message.author.id][message.channel.id].attributes[attributeMap[term]].totalValue;
         }
 
         // Otherwise, is it an additional character statistic?
-        else if (isAdditionalCharacterStat(term)) { 
+        else if (isAdditionalCharacterStat(term)) {
             stats.missingCharacter = !hasCharacter(message);
-            if (!messageAssert(message,hasCharacter(message),'you need to load a character to use character statistic rolls (statistic "' + term + '" detected in roll)')) { return stats };
+            if (!messageAssert(message, hasCharacter(message), 'you need to load a character to use character statistic rolls (statistic "' + term + '" detected in roll)')) { return stats };
             nStats += 1;
             // TODO: Load additional statistics
-            nDice += sign*0;
+            nDice += sign * 0;
         }
 
         // Otherwise, invalid
@@ -715,28 +830,28 @@ function parseRollString(message,rollString,testType) {
     if (nSkills == 1 && nAttributes == 0 && nStats == 0) {
         // Reset and go through the terms again
         nDice = 0;
-        for (var ii=0; ii < rollParts.length; ii++) {
+        for (var ii = 0; ii < rollParts.length; ii++) {
             // Get the current term in the roll string
             let term = rollParts[ii];
 
             // Check if a sign was used (if so, remove it), otherwise just it as positive
             let sign = 1;
-            if (term.substr(0,1) == '+') {
+            if (term.substr(0, 1) == '+') {
                 term = term.substr(1);
-            } else if (term.substr(0,1) == '-') {
+            } else if (term.substr(0, 1) == '-') {
                 term = term.substr(1);
                 sign = -1;
-            }  
-            
+            }
+
             // If it is a static modifier, include it
             if (parseInt(term)) {
-                nDice += sign*parseInt(term);
+                nDice += sign * parseInt(term);
             }
 
             // If it is the skill, adjust by its total dice instead of just its rating
-            else if (isSkill(term)) { 
+            else if (isSkill(term)) {
                 let skill = characterMap[message.author.id][message.channel.id].activeSkills[term];
-                nDice += sign*Math.max(0,skill.totalDice);
+                nDice += sign * Math.max(0, skill.totalDice);
             }
 
             // If it is anything else, error
@@ -746,7 +861,7 @@ function parseRollString(message,rollString,testType) {
         }
     }
 
-    stats.dice = Math.max(0,nDice);
+    stats.dice = Math.max(0, nDice);
     stats.valid = true;
 
     return stats;
@@ -759,7 +874,7 @@ function parseRollString(message,rollString,testType) {
 #
 ####################################################################################
 */
-function nuke (message, abortListener) {
+function nuke(message, abortListener) {
     if (!abortListener.ended) {
         message.channel.fetchMessages({ limit: 3 })
             .then(function (messages) { return messages })
@@ -787,11 +902,11 @@ function nuke (message, abortListener) {
             });
     }
 }
-    
-function doCleanAll (message) {
+
+function doCleanAll(message) {
     let botCanManage = message.channel.guild.members.get(client.user.id).hasPermission('MANAGE_MESSAGES');
     let userCanManage = message.channel.guild.members.get(message.author.id).hasPermission('MANAGE_MESSAGES');
-    
+
     if (!userCanManage) {
         message.reply('you need message management permissions to use the [nuke] command')
     } else if (!botCanManage) {
@@ -800,7 +915,7 @@ function doCleanAll (message) {
         // Ask for confirmation
         message.reply('are you sure you want to [nuke] the channel messages? [y/n]')
         awaitingConfirmation[message.author.id] = 'nuke';
-        let confirmationListener = new Discord.MessageCollector(message.channel, function (newmsg) { return newmsg.author.id == message.author.id }, {max: 50, maxMatches: 1});
+        let confirmationListener = new Discord.MessageCollector(message.channel, function (newmsg) { return newmsg.author.id == message.author.id }, { max: 50, maxMatches: 1 });
 
         // Check the first message
         confirmationListener.on('collect', function (collectedMessage) {
@@ -833,7 +948,7 @@ function doCleanAll (message) {
                 });
 
             }
-            
+
             // Nuke rejected if anything else
             else {
                 message.reply('you aborted the [nuke]')
@@ -853,16 +968,16 @@ function doClean(message) {
         message.reply('you need message management permissions to use the [clean] command')
     } else if (!botCanManage) {
         message.reply('I need message management permissions to [clean] for you')
-    } else {  
+    } else {
         let nCleanMax = 50;
         let nClean = reClean.exec(message);
         nClean = nClean[1] ? nClean[1] : 10;
-        nClean = Math.min(nCleanMax,nClean);
+        nClean = Math.min(nCleanMax, nClean);
         nClean += nClean > 0 ? 1 : 0; // If cleaning anything, include the [clean X] message without counting it
 
-        message.channel.fetchMessages({limit: nClean})
+        message.channel.fetchMessages({ limit: nClean })
             .then(messages => {
-                messages.forEach(function(value,key,map) {
+                messages.forEach(function (value, key, map) {
                     messages.get(key).delete()
                         .catch(console.error);
                 });
@@ -877,9 +992,19 @@ function doClean(message) {
 #
 ####################################################################################
 */
-function doLoadCharacter (message) {
+function doLoadCharacter(message) {
     var res = reGetChar.exec(message.content);
     var pastebinId = res[1];
+    PastebinAPI.get(pastebinId, function (success, data) {
+        if (!success) {
+            message.reply('failed to load character from paste ' + pastebinId);
+        } else {
+            parseString(data, function (err, result) {
+                doStoreCharacter(message, result, pastebinId);
+            });
+        }
+    })
+    /*
     pastebin
         .getPaste(pastebinId)
         .then(function (data) {
@@ -891,7 +1016,9 @@ function doLoadCharacter (message) {
             console.log(err);
             message.reply('failed to load character from paste ' + pastebinId);
         });
+    */
 }
+
 function doUnloadCharacter(message) {
     if (!hasCharacter(message)) {
         message.reply('you have no character loaded to unload');
@@ -900,8 +1027,10 @@ function doUnloadCharacter(message) {
     let alias = characterMap[message.author.id][message.channel.id].alias;
     message.reply('unloaded ' + (alias ? '"' + alias + '"' : 'character with no alias'));
     delete characterMap[message.author.id][message.channel.id];
+    saveData(message);
 }
-function doCheckCharacter (message) {
+
+function doCheckCharacter(message) {
     let authorId = message.author.id;
     let channelId = message.channel.id;
 
@@ -914,7 +1043,8 @@ function doCheckCharacter (message) {
     }
     message.reply(str);
 }
-function doStoreCharacter (message,chummerJson,pastebinId) {
+
+function doStoreCharacter(message, chummerJson, pastebinId) {
     // Go through attributes, active skills, knowledge skills, skill groups and improvements
     var attributeJson = chummerJson.character.attributes[0].attribute;
     var improvementJson = chummerJson.character.improvements[0].improvement;
@@ -923,25 +1053,25 @@ function doStoreCharacter (message,chummerJson,pastebinId) {
     var skillGroupJson = chummerJson.character.newskills[0].groups[0].group;
 
     var attributes = {};
-    var improvements ={};
+    var improvements = {};
     var skillGroup = {};
     var activeSkills = {};
 
     // Go through skill groups (they are identified by name)
-    Object.keys(skillGroupJson).forEach(function(id) {
+    Object.keys(skillGroupJson).forEach(function (id) {
         skillGroup[skillGroupJson[id].name[0]] = {};
         skillGroup[skillGroupJson[id].name[0]].base = parseInt(skillGroupJson[id].base[0]);
         skillGroup[skillGroupJson[id].name[0]].karma = parseInt(skillGroupJson[id].karma[0]);
     });
-    
+
     // Go through attributes (they contain TotalValue, so won't need to check their improvements)
-    Object.keys(attributeJson).forEach(function(id) {
+    Object.keys(attributeJson).forEach(function (id) {
         attributes[attributeJson[id].name[0]] = {};
         attributes[attributeJson[id].name[0]].totalValue = parseInt(attributeJson[id].totalvalue[0]);
     });
 
     // Go through improvements
-    Object.keys(improvementJson).forEach(function(id) {
+    Object.keys(improvementJson).forEach(function (id) {
         let reImprovement = /^(SkillBase|InitiativeDice|Skill)$/;
 
         if (reImprovement.test(improvementJson[id].improvementttype[0])) {
@@ -950,7 +1080,7 @@ function doStoreCharacter (message,chummerJson,pastebinId) {
             if (!(improvementName)) {
                 improvementName = stringCondenseLower(improvementType); // Used for initiative dice, as the bonus doesn't have a name
             }
-            if (!(improvementName in improvements)) { 
+            if (!(improvementName in improvements)) {
                 improvements[improvementName] = {};
             }
             if (!(improvementType in improvements[improvementName])) {
@@ -963,7 +1093,7 @@ function doStoreCharacter (message,chummerJson,pastebinId) {
     });
 
     // Go through active skills
-    Object.keys(activeSkillJson).forEach(function(id) {
+    Object.keys(activeSkillJson).forEach(function (id) {
         // For each skill, get the base/karma values
         let skillName = skillTable[activeSkillJson[id].suid].name;
         activeSkills[skillName] = {};
@@ -980,7 +1110,7 @@ function doStoreCharacter (message,chummerJson,pastebinId) {
             activeSkills[skillName].groupBase = 0;
             activeSkills[skillName].groupKarma = 0;
         }
-        
+
         // Get any related attribute effects
         activeSkills[skillName].attributeName = skillTable[activeSkillJson[id].suid].attribute;;
         activeSkills[skillName].attributeTotal = attributes[activeSkills[skillName].attributeName].totalValue;
@@ -995,14 +1125,14 @@ function doStoreCharacter (message,chummerJson,pastebinId) {
             activeSkills[skillName].improvementBase = ('skillbase' in improvements[skillName]) ? improvements[skillName].skillbase : 0;
             activeSkills[skillName].improvementOther = ('skill' in improvements[skillName]) ? improvements[skillName].skill : 0;
         }
-        
+
         // Calculate total base dice
         activeSkills[skillName].ratingDice = activeSkills[skillName].base
-                                            + activeSkills[skillName].karma
-                                            + activeSkills[skillName].groupBase
-                                            + activeSkills[skillName].groupKarma
-                                            + activeSkills[skillName].improvementBase;
-        
+            + activeSkills[skillName].karma
+            + activeSkills[skillName].groupBase
+            + activeSkills[skillName].groupKarma
+            + activeSkills[skillName].improvementBase;
+
         activeSkills[skillName].blockedDefault = false;
         activeSkills[skillName].totalDice = activeSkills[skillName].ratingDice + activeSkills[skillName].improvementOther;
         if (activeSkills[skillName].ratingDice > 0) {
@@ -1026,18 +1156,24 @@ function doStoreCharacter (message,chummerJson,pastebinId) {
     //      HotSim: DataProcessing + Intuition + 4d6);
     //      RiggerAR: same as meat
     let initiative = {};
-    initiative = {'meat':    {'base': attributes['REA'].totalValue + attributes['INT'].totalValue,
-                              'dice': 1+(('initiativedice' in improvements) ? improvements['initiativedice']['initiativedice'] : 0)},
-                  'astral':  {'base': attributes['INT'].totalValue + attributes['INT'].totalValue,
-                              'dice': 3}};
-                /*
-                  'hotsim':  {'base': attributes['reaction'].totalValue + attributes['intuition'].totalValue,
-                              'dice': 1+(('initiativedice' in improvements) ? improvements['initiativedice']['initiativedice'] : 0)},
-                  'coldsim': {'base': attributes['reaction'].totalValue + attributes['intuition'].totalValue,
-                              'dice': 1+(('initiativedice' in improvements) ? improvements['initiativedice']['initiativedice'] : 0)},
-                  'rigger':  {'base': attributes['reaction'].totalValue + attributes['intuition'].totalValue,
-                              'dice': 1+(('initiativedice' in improvements) ? improvements['initiativedice']['initiativedice'] : 0)},
-                */
+    initiative = {
+        'meat': {
+            'base': attributes['REA'].totalValue + attributes['INT'].totalValue,
+            'dice': 1 + (('initiativedice' in improvements) ? improvements['initiativedice']['initiativedice'] : 0)
+        },
+        'astral': {
+            'base': attributes['INT'].totalValue + attributes['INT'].totalValue,
+            'dice': 3
+        }
+    };
+    /*
+      'hotsim':  {'base': attributes['reaction'].totalValue + attributes['intuition'].totalValue,
+                  'dice': 1+(('initiativedice' in improvements) ? improvements['initiativedice']['initiativedice'] : 0)},
+      'coldsim': {'base': attributes['reaction'].totalValue + attributes['intuition'].totalValue,
+                  'dice': 1+(('initiativedice' in improvements) ? improvements['initiativedice']['initiativedice'] : 0)},
+      'rigger':  {'base': attributes['reaction'].totalValue + attributes['intuition'].totalValue,
+                  'dice': 1+(('initiativedice' in improvements) ? improvements['initiativedice']['initiativedice'] : 0)},
+    */
 
     let charData = {
         'alias': chummerJson.character.alias[0],
@@ -1082,10 +1218,11 @@ function doStoreCharacter (message,chummerJson,pastebinId) {
     */
 
     // Assign the character data to the user and channel
-    if (!(charData.owner in characterMap)) { characterMap[charData.owner] = {}};
+    if (!(charData.owner in characterMap)) { characterMap[charData.owner] = {} };
     characterMap[charData.owner][charData.channel] = charData;
 
     message.reply('loaded ' + (chummerJson.character.alias[0] ? '"' + chummerJson.character.alias[0] + '" ' : 'character without alias ') + 'from paste ' + pastebinId);
+    saveData(message);
 }
 
 /*
@@ -1095,25 +1232,29 @@ function doStoreCharacter (message,chummerJson,pastebinId) {
 #
 ####################################################################################
 */
-function isSkill (str) {
+function isSkill(str) {
     let parsedStr = stringCondenseLower(str);
     var flag = false;
-    Object.keys(skillTable).forEach(function(id) {
+    Object.keys(skillTable).forEach(function (id) {
         if (parsedStr == skillTable[id].name) {
             flag = true;
         }
     });
     return flag;
 }
-function isAttribute (str) {
+
+function isAttribute(str) {
     return reIsAttribute.test(str);
 }
-function isAdditionalCharacterStat (str) {
+
+function isAdditionalCharacterStat(str) {
     return reIsAdditionalCharacterStat.test(str);
 }
-function stringCondenseLower (str) {
-    return str.replace(/ /g,'').toLowerCase();
+
+function stringCondenseLower(str) {
+    return str.replace(/ /g, '').toLowerCase();
 }
+
 function hasCharacter(message) {
     if (message.author.id in characterMap) {
         if (message.channel.id in characterMap[message.author.id]) {
@@ -1122,14 +1263,15 @@ function hasCharacter(message) {
     }
     return false;
 }
-function messageAssert(message,condition,str) {
+
+function messageAssert(message, condition, str) {
     if (!condition) {
         message.reply(str);
     }
     return condition;
 }
 
-function DiceCode (dice,limit,pushTheLimit,edgeDice) {
+function DiceCode(dice, limit, pushTheLimit, edgeDice) {
     this.dice = dice;
     this.limit = null;
     this.ruleOfSix = null;
@@ -1150,7 +1292,7 @@ function rollDice(dc) {
     var additionalDice = 0;
     var rollSum = 0;
     for (var iDice = 0; iDice < parseInt(dc.dice) + additionalDice; iDice++) {
-        roll[iDice] = getRandomInt(1,6);
+        roll[iDice] = getRandomInt(1, 6);
         hits += roll[iDice] >= 5 ? 1 : 0;
         rollSum += roll[iDice];
         if (roll[iDice] == 6 && dc.ruleOfSix) {
@@ -1166,6 +1308,10 @@ function rollDice(dc) {
     result.sum = rollSum;
 
     return result;
+}
+
+function currentDateTime() {
+    return moment().format('YYYY-MM-DD hh:mm:ss')
 }
 
 function getRandomInt(min, max) {
