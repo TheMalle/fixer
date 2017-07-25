@@ -1,4 +1,4 @@
-const versionId = '0.1.1';
+const versionId = '0.2.0+0000';
 const Discord = require('discord.js');
 var fetch = require('node-fetch');
 var parseString = require('xml2js').parseString;
@@ -12,19 +12,25 @@ var args = {};
 
 const client = new Discord.Client();
 const reConfirm = /^\[y\]$/i;
-const reStop = /^\[stop\]$/i;
-const reHelp = /^\[help(?:\:\s*([A-z][A-z ]*))?\]$/i;
-const reInitiativeRoll = /^\[i(?:nit(?:iative)?)? ?(meat|astral)?\s*(?:([\+\-])\s*(\d+)d6)?\s*(?:([\+\-])\s*(\d+))?\]$/i;
+const reStop = /^\[\s*stop\s*\].*$/i;
+const reHelp = /^\[\s*help(?:\:\s*([A-z][A-z ]*))?\].*$/i;
+const reMacroDef = /^\[\s*macro\s*:\s*([A-z0-9]+)\s+\"([^\"]+)\"\s*\].*$/i;
+const reMacroDel = /^\[\s*delmacro\s*:\s*([A-z0-9]+)\s*\].*$/i;
+const reMacroDelAll = /^\[\s*delallmacros\s*\].*$/i;
+const reMacroList = /^\[\s*macrolist\s*\].*$/i;
+const reInitiativeRoll = /^\[\s*i(?:nit(?:iative)?)?\s*(meat|astral)?\s*(?:([\+\-])\s*(\d+)d6)?\s*(?:([\+\-])\s*(\d+))?\].*$/i;
 //const reDamageTest = /^\[\d+(S|P)(?:(\+|\-)(\d+))b(\d+)a(\d+)(!)?\]$/;
-const reClean = /^\[\s*clean\s*(\d+)?\s*\]$/i;
-const reNuke = /^\[\s*nuke\s*\]$/i;
-const reGetChar = /^\[\s*get(?:Char(?:acter)?)?\:\s?([A-z0-9]{8})\s*\]$/i;
-const reCheckChar = /^\[\s*check(?:Char(?:acter)?)?\s*\]$/i;
-const reUnloadChar = /^\[\s*unload(?:Char(?:acter)?)?\s*\]$/i;
+const reClean = /^\[\s*clean\s*(\d+)?\s*\].*$/i;
+const reNuke = /^\[\s*nuke\s*\].*$/i;
+const reGetChar = /^\[\s*get(?:Char(?:acter)?)?\:\s?([A-z0-9]{8})\s*\].*$/i;
+const reCheckChar = /^\[\s*check(?:Char(?:acter)?)?\s*\].*$/i;
+const reUnloadChar = /^\[\s*unload(?:Char(?:acter)?)?\s*\].*$/i;
 const reIsAttribute = /^(Body|Agility|Reaction|Strength|Charisma|Intuition|Logic|Willpower|Edge|Magic|Resonance|Depth)$/i
 const reIsAdditionalCharacterStat = /^()$/i
-const reRollFormat = /^\s*\[\s*([A-z0-9 \+\-]*?[0-9]*)\s*(?:\[(\d+)\])?\s*(!)?\s*(v|a|T)?\s*(\d+)?\s*(?:\[(\d+)\])?\s*(!)?\s*(?:,\s*(\d+))?\s*\].*$/
-var characterMap = {};
+const reRollFormat = /^\s*\[\s*(([A-z0-9: \+\-]*?[0-9 ]*)\s*(?:\[(\d+)\])?\s*(!)?\s*(v|a|T)?\s*(\d+)?\s*(?:\[(\d+)\])?\s*(!)?\s*(?:,\s*(\d+))?)\s*\].*$/
+const maxDiscordMessageLength = 2000;
+const discordCodeBlockWrapper = '```';
+var dataMap = {};
 var awaitingConfirmation = {};
 var restrictedMode = true;
 
@@ -142,7 +148,6 @@ const skillTable = {
 // TODO: Implement [push] to spend edge to push the limit on the previous roll
 // TODO: Implement support for multiple characters
 // TODO: Implement limit keywords
-// TODO: Implement macros
 // TODO: Initiative tracker
 // TODO: Extended tests [e]
 // TODO: Damage rolls
@@ -209,6 +214,26 @@ client.on('message', message => {
         // Help commands
         else if (reHelp.test(message.content)) {
             doDisplayHelp(message);
+        }
+
+        // Define macros
+        else if (reMacroDef.test(message.content)) {
+            doDefineMacro(message);
+        }
+
+        // List macros
+        else if (reMacroList.test(message.content)) {
+            doListMacros(message);
+        }
+
+        // Delete macros
+        else if (reMacroDel.test(message.content)) {
+            doDeleteMacro(message);
+        }
+
+        // Delete all macros
+        else if (reMacroDelAll.test(message.content)) {
+            doDeleteAllMacros(message);
         }
 
         // Clean
@@ -342,7 +367,7 @@ function saveData(message) {
         // Login to pastebin
         PastebinAPI.login(args.user, args.password, function (success, data) {
             // Edit paste
-            PastebinAPI.edit(args.paste, { contents: JSON.stringify(characterMap), expires: 'N' }, function (success, data) {
+            PastebinAPI.edit(args.paste, { contents: JSON.stringify(dataMap), expires: 'N' }, function (success, data) {
                 if (!success) {
                     // If the save failed, notify user
                     message.reply('there was an error attempting to backup the data!')
@@ -358,7 +383,95 @@ function saveData(message) {
 }
 
 function loadData(json) {
-    characterMap = JSON.parse(json);
+    dataMap = JSON.parse(json);
+}
+
+/*
+####################################################################################
+#
+# Macros
+#
+####################################################################################
+*/
+function doDefineMacro(message) {
+    let macroDef = reMacroDef.exec(message.content);
+    let macroName = macroDef[1];
+    let macroText = macroDef[2];
+    let author = message.author.id;
+    let channel = message.channel.id;
+
+    ensureUserHasData(author, channel);
+    let alreadyDefined = macroName in dataMap[author][channel].macro;
+    dataMap[author][channel].macro[macroName] = macroText;
+    message.reply((alreadyDefined ? 'modified ' : 'created ') + 'macro "' + macroName + '" ' + (alreadyDefined ? 'to' : 'as') + ': "' + macroText + '"');
+    saveData(message);
+}
+
+function doDeleteMacro(message) {
+    let author = message.author.id;
+    let channel = message.channel.id;
+    let macroName = reMacroDel.exec(message.content)[1];
+    str = 'macro "' + macroName + '" not found';
+    if (!(author in dataMap)) { message.reply(str); return };
+    if (!(channel in dataMap[author])) { message.reply(str); return };
+    if (!('macro' in dataMap[author][channel])) { message.reply(str); return };
+    if (!(macroName in dataMap[author][channel].macro)) { message.reply(str); return };
+    delete dataMap[author][channel].macro[macroName];
+    message.reply('deleted macro "' + macroName + '"');
+    saveData(message);
+}
+
+function doDeleteAllMacros(message) {
+    let author = message.author.id;
+    let channel = message.channel.id;
+    if (!(author in dataMap)) { message.reply(str); return };
+    if (!(channel in dataMap[author])) { message.reply(str); return };
+    if (!('macro' in dataMap[author][channel])) { message.reply(str); return };
+    dataMap[author][channel].macro = {};
+    message.reply('deleted all macros');
+    saveData(message);
+}
+
+function doListMacros(message) {
+    str = ['no macros found'];
+    if (!(message.author.id in dataMap)) { }
+    else if (!(message.channel.id in dataMap[message.author.id])) { }
+    else if (!('macro' in dataMap[message.author.id][message.channel.id])) { }
+    else if (Object.keys(dataMap[message.author.id][message.channel.id].macro).length == 0) { }
+    else {
+        let macroData = dataMap[message.author.id][message.channel.id].macro;
+        let macroArray = [];
+        let maxMacroNameLength = 0;
+        Object.keys(macroData).forEach(function (macroName) {
+            macroArray.push([macroName, macroData[macroName]]);
+            maxMacroNameLength = Math.max(maxMacroNameLength, macroName.length);
+        })
+        macroArray.sort(function (a, b) {
+            if (a[0] === b[0]) { return 0 };
+            return a[0] < b[0] ? -1 : 1;
+        });
+        let macroHeader = discordCodeBlockWrapper + 'Macro' + ' '.repeat(Math.max(2, maxMacroNameLength + 2 - 5)) + 'Replaced by';
+        str = [macroHeader];
+        for (var ii = 0; ii < macroArray.length; ii++) {
+            let macroName = macroArray[ii][0];
+            let macroText = macroArray[ii][1];
+            let macroDescription = '\n' + macroName + ' '.repeat(Math.max(7 - macroName.length, maxMacroNameLength + 2 - macroName.length)) + macroText;
+            if (str[str.length - 1].length + macroDescription.length + discordCodeBlockWrapper.length < maxDiscordMessageLength) {
+                // Append to current message
+                str[str.length - 1] += macroDescription;
+            } else {
+                // Finish last message
+                str[str.length - 1] += discordCodeBlockWrapper;
+
+                // Start new message
+                str.push(macroHeader + macroDescription);
+            }
+        }
+        str[str.length - 1] += discordCodeBlockWrapper;
+    }
+    for (var ii = 0; ii < str.length; ii++) {
+        message.reply(str[ii]);
+    }
 }
 
 /*
@@ -382,6 +495,14 @@ function doDisplayHelp(message) {
     else if (arg == 'character') {
         doDisplayCharacterHelp(message);
     }
+
+    else if (arg == 'macros') {
+        doDisplayMacroHelp(message);
+    }
+
+    else {
+        message.reply('the help topic "' + arg + '" is not recognized');
+    }
 }
 
 function doDisplayAdminHelp(message) {
@@ -402,6 +523,7 @@ function doDisplayGeneralHelp(message) {
         + 'This is Fixer ' + versionId + (restrictedMode ? ' (restricted mode)' : '') + '\n'
         + 'For administration commands, see **[help: admin]**\n'
         + 'For commands available for loaded characters, see **[help: character]**\n'
+        + 'For macros, see **[help: macros]**\n'
         + '\n'
         + 'The following rolls are available without loading a character:\n'
         + '\t**[X]** simple test using X dice, e.g. [12]\n'
@@ -494,6 +616,23 @@ function doDisplayCharacterHelp(message) {
     message.reply(helpmsg);
 }
 
+function doDisplayMacroHelp(message) {
+    helpmsg =
+        '\n'
+        + 'Macros are not connected to a specific character (but are still tracked separately in each channel). Macros work as aliases, replacing text in your roll specification.'
+        + ' Macro names must consist of alphanumeric characters without spaces.\n'
+        + '\n'
+        + '**[macrolist]** shows all of your macros\n'
+        + '**[macro: A "B"] creates the macro which replaces ":A" in all your rolls with "B"\n'
+        + '**[delmacro: A] delete the macro A\n'
+        + '**[delallmacros] delete all of your macros\n'
+        + '\n'
+        + 'Example use:\n'
+        + '\t[macro: resistDrain "willpower + charisma"] now :resistDrain will be interpreted as "willpower + charisma"\n'
+        + '\t[:resistDrain + 3] roll your macro resistDrain with 3 additional dice';
+    message.reply(helpmsg);
+}
+
 /*
 ####################################################################################
 #
@@ -502,22 +641,45 @@ function doDisplayCharacterHelp(message) {
 ####################################################################################
 */
 function doGeneralRoll(message) {
+    // Find macro definitions in message
+    let macroDefs = getUserMacros(message);
+
+    // Order them in descending macro name length (makes replacement easier)
+    let macroArray = [];
+    Object.keys(macroDefs).forEach(function (key) {
+        macroArray.push([key, macroDefs[key]]);
+    });
+    macroArray.sort(function (a, b) {
+        if (a[0].length === b[0].length) { return 0 };
+        return a[0].length > b[0].length ? -1 : 1;
+    });
+
+    // Go through all the defined macros and replace any which are used in the message
+    let msg = message.content;
+    let hadMacros = false;
+    for (var ii = 0; ii < macroArray.length; ii++) {
+        let reReplaceMacro = new RegExp(':\s*' + macroArray[ii][0], 'g');
+        hadMacros = reReplaceMacro.test(msg) ? true : hadMacros;
+        msg = msg.replace(reReplaceMacro, stringCondenseLower(macroArray[ii][1]));
+    }
+
     // Get roll parts
-    let rollParts = reRollFormat.exec(message.content);
-    let rollString = rollParts[1] ? stringCondenseLower(rollParts[1]) : '';
-    let limit = rollParts[2] ? parseInt(rollParts[2]) : '';
-    let pushTheLimit = rollParts[3] ? rollParts[3] : '';
-    let testType = rollParts[4] ? rollParts[4] : '';
-    let secondaryDice = rollParts[5] ? rollParts[5] : '';
-    let secondaryLimit = rollParts[6] ? rollParts[6] : '';
-    let secondaryPush = rollParts[7] ? rollParts[7] : '';
-    let secondaryValue = rollParts[8] ? rollParts[8] : '';
+    let rollParts = reRollFormat.exec(msg);
+    let rollString = rollParts[2] ? stringCondenseLower(rollParts[2]) : '';
+    let limit = rollParts[3] ? parseInt(rollParts[3]) : '';
+    let pushTheLimit = rollParts[4] ? rollParts[4] : '';
+    let testType = rollParts[5] ? rollParts[5] : '';
+    let secondaryDice = rollParts[6] ? rollParts[6] : '';
+    let secondaryLimit = rollParts[7] ? rollParts[7] : '';
+    let secondaryPush = rollParts[8] ? rollParts[8] : '';
+    let secondaryValue = rollParts[9] ? rollParts[9] : '';
 
     // Validate roll string and get roll statistics
-    let rollStats = parseRollString(message, rollString, testType);;
+    let rollStats = parseRollString(message, rollString, testType);
     if (!rollStats.valid) { return };
     let nDice = rollStats.dice;
     let edge = rollStats.edge;
+    let parsedMessage = hadMacros ? '[' + reRollFormat.exec(msg)[1].trim() + ']' : '';
 
     // validate other inputs based on test type
 
@@ -594,33 +756,33 @@ function doGeneralRoll(message) {
     if (!limit && rollStats.limit) { limit = rollStats.limit };
 
     // With validated inputs, perform the actual test type
-    if (stringCondenseLower(testType) === '') { doSimpleTest(message, nDice, limit, pushTheLimit, edge) }
-    else if (stringCondenseLower(testType) === 't') { doThresholdTest(message, nDice, limit, pushTheLimit, secondaryDice, edge) }
-    else if (stringCondenseLower(testType) === 'v') { doOpposedTest(message, nDice, limit, pushTheLimit, secondaryDice, secondaryLimit, secondaryPush, edge) }
-    else if (stringCondenseLower(testType) === 'a') { doAvailabilityTest(message, nDice, limit, pushTheLimit, secondaryDice, secondaryValue, edge) }
+    if (stringCondenseLower(testType) === '') { doSimpleTest(message, parsedMessage, nDice, limit, pushTheLimit, edge) }
+    else if (stringCondenseLower(testType) === 't') { doThresholdTest(message, parsedMessage, nDice, limit, pushTheLimit, secondaryDice, edge) }
+    else if (stringCondenseLower(testType) === 'v') { doOpposedTest(message, parsedMessage, nDice, limit, pushTheLimit, secondaryDice, secondaryLimit, secondaryPush, edge) }
+    else if (stringCondenseLower(testType) === 'a') { doAvailabilityTest(message, parsedMessage, nDice, limit, pushTheLimit, secondaryDice, secondaryValue, edge) }
 }
 
-function doSimpleTest(message, nDice, limit, pushTheLimit, edge) {
+function doSimpleTest(message, parsedRollString, nDice, limit, pushTheLimit, edge) {
     var dc = new DiceCode(nDice, limit, pushTheLimit, (pushTheLimit ? edge : 0));
     var roll = rollDice(dc);
-    message.reply('**' + roll.hits + '** hit' + (roll.hits == 1 ? '' : 's') + ' (' + roll.roll + (roll.limitUsed == true ? '; limit ' + roll.limit + ' exceeded' : '') + ')');
+    message.reply((parsedRollString ? 'Rolled ' + parsedRollString + ' for ' : '') + '**' + roll.hits + '** hit' + (roll.hits == 1 ? '' : 's') + ' (' + roll.roll + (roll.limitUsed == true ? '; limit ' + roll.limit + ' exceeded' : '') + ')');
 }
 
-function doThresholdTest(message, nDice, limit, pushTheLimit, secondaryDice, edge) {
+function doThresholdTest(message, parsedRollString, nDice, limit, pushTheLimit, secondaryDice, edge) {
     var dc = new DiceCode(nDice, limit, pushTheLimit, (pushTheLimit ? edge : 0));
     var roll = rollDice(dc);
     var threshold = secondaryDice;
     var margin = roll.hits - threshold;
-    message.reply((margin >= 0 ? '**success**' : '**failure**') + ' (' + roll.roll + '; margin: **' + margin + '**)');
+    message.reply((parsedRollString ? 'Rolled ' + parsedRollString + ' for ' : '') + (margin >= 0 ? '**success**' : '**failure**') + ' (' + roll.roll + '; margin: **' + margin + '**)');
 }
 
-function doOpposedTest(message, nDice, limit, pushTheLimit, secondaryDice, secondaryLimit, secondaryPush, edge) {
+function doOpposedTest(message, parsedRollString, nDice, limit, pushTheLimit, secondaryDice, secondaryLimit, secondaryPush, edge) {
     var dc1 = new DiceCode(nDice, limit, pushTheLimit, (pushTheLimit ? edge : 0));
     var dc2 = new DiceCode(secondaryDice, secondaryLimit, secondaryPush, 0);
     var roll1 = rollDice(dc1);
     var roll2 = rollDice(dc2);
     var netHits = roll1.hits - roll2.hits;
-    message.reply('**' + netHits + '** net hit' + (netHits == 1 ? '' : 's')
+    message.reply((parsedRollString ? 'Rolled ' + parsedRollString + ' for ' : '') + '**' + netHits + '** net hit' + (netHits == 1 ? '' : 's')
         + ' ('
         + '**' + roll1.hits + '** hit' + (roll1.hits == 1 ? '' : 's') + ' (' + roll1.roll + (roll1.limitUsed == true ? '; limit ' + roll1.limit + ' exceeded' : '') + ')'
         + ' vs '
@@ -628,7 +790,7 @@ function doOpposedTest(message, nDice, limit, pushTheLimit, secondaryDice, secon
         + ')');
 }
 
-function doAvailabilityTest(message, nDice, limit, pushTheLimit, secondaryDice, secondaryValue, edge) {
+function doAvailabilityTest(message, parsedRollString, nDice, limit, pushTheLimit, secondaryDice, secondaryValue, edge) {
     var dc1 = new DiceCode(nDice, limit, pushTheLimit, (pushTheLimit ? edge : 0));
     var dc2 = new DiceCode(secondaryDice, null, null, 0);
     var roll1 = rollDice(dc1);
@@ -637,7 +799,7 @@ function doAvailabilityTest(message, nDice, limit, pushTheLimit, secondaryDice, 
 
     let availTime = getAvailabilityTime(netHits, secondaryValue);
 
-    message.reply('item is **' + (availTime.available ? '' : 'un') + 'available** ' + (availTime.available ? 'in ' + availTime.string : '')
+    message.reply((parsedRollString ? 'Rolled ' + parsedRollString + ' for ' : 'item is ') + '**' + (availTime.available ? '' : 'un') + 'available** ' + (availTime.available ? 'in ' + availTime.string : '')
         + ' ('
         + '**' + roll1.hits + '** hit' + (roll1.hits == 1 ? '' : 's') + ' (' + roll1.roll + (roll1.limitUsed == true ? '; limit ' + roll1.limit + ' exceeded' : '') + ')'
         + ' vs '
@@ -708,13 +870,7 @@ function getAvailabilityTime(netHits, value) {
 
 function doInitiativeRoll(message) {
     // Check if user has a stored character
-    let hasCharacter = false;
-    if (message.author.id in characterMap) {
-        if (message.channel.id in characterMap[message.author.id]) {
-            hasCharacter = true;
-        }
-    }
-    if (!hasCharacter) {
+    if (!hasCharacter(message)) {
         message.reply('you must load a character before using initiative rolls.');
         return
     }
@@ -724,8 +880,9 @@ function doInitiativeRoll(message) {
     let initType = stringCondenseLower((rollParts[1]) ? rollParts[1] : 'meat');
     let bonusDice = parseInt(rollParts[2] + rollParts[3]) ? parseInt(rollParts[2] + rollParts[3]) : 0;
     let bonusMod = parseInt(rollParts[4] + rollParts[5]) ? parseInt(rollParts[4] + rollParts[5]) : 0;
-    let baseDice = characterMap[message.author.id][message.channel.id].initiative[initType].dice;
-    let baseMod = characterMap[message.author.id][message.channel.id].initiative[initType].base;
+    let characterData = getCharacterData(message);
+    let baseDice = characterData.initiative[initType].dice;
+    let baseMod = characterData.initiative[initType].base;
 
     let totalDice = Math.max(0, Math.min(5, baseDice + bonusDice));
 
@@ -742,10 +899,10 @@ function parseRollString(message, rollString, testType) {
     let stats = {
         'valid': false,
         'dice': null,
-        'edge': !hasCharacter(message) ? 0 : characterMap[message.author.id][message.channel.id].attributes['EDG'].totalValue,
+        'edge': !hasCharacter(message) ? 0 : getCharacterData(message).attributes['EDG'].totalValue
     }
 
-    // Special case: availability test with blank rollstring. Handle as charisma+negotiation
+    // Special case: availability test with blank rollstring. Handle as regular negotiation
     if (testType == 'a' && rollString == '') {
         rollString = 'negotiation';
     }
@@ -759,7 +916,7 @@ function parseRollString(message, rollString, testType) {
     */
 
     // To validate the roll string, find all atomic parts of the roll string
-    let reRollAtoms = /\s*[\+\-]?\s*[A-z0-9]+/g;
+    let reRollAtoms = /\s*[\+\-]?\s*[A-z0-9:]+/g;
     let rollParts = rollString.match(reRollAtoms);
 
     /*
@@ -774,6 +931,7 @@ function parseRollString(message, rollString, testType) {
     let nAttributes = 0;
     let nStats = 0;
     let nDice = 0;
+    let charData = getCharacterData(message);
 
     for (var ii = 0; ii < rollParts.length; ii++) {
         // Get the current term in the roll string
@@ -786,6 +944,9 @@ function parseRollString(message, rollString, testType) {
         } else if (term.substr(0, 1) == '-') {
             term = term.substr(1);
             sign = -1;
+        } else if (ii > 0) {
+            message.reply('missing or invalid sign for term "' + term + '"');
+            return stats;
         }
 
         // Check if the term is a number
@@ -799,7 +960,7 @@ function parseRollString(message, rollString, testType) {
             if (!messageAssert(message, hasCharacter(message), 'you need to load a character to use skill rolls (skill "' + term + '" detected in roll)')) { return stats };
             // Count up number of skills and accumulate dice from rating
             nSkills += 1;
-            let skill = characterMap[message.author.id][message.channel.id].activeSkills[term];
+            let skill = charData.activeSkills[term];
             nDice += sign * Math.max(0, skill.totalDice - skill.attributeTotal);
         }
 
@@ -807,7 +968,7 @@ function parseRollString(message, rollString, testType) {
         else if (isAttribute(term)) {
             if (!messageAssert(message, hasCharacter(message), 'you need to load a character to use attribute rolls (attribute "' + term + '" detected in roll)')) { return stats };
             nAttributes += 1;
-            nDice += sign * characterMap[message.author.id][message.channel.id].attributes[attributeMap[term]].totalValue;
+            nDice += sign * charData.attributes[attributeMap[term]].totalValue;
         }
 
         // Otherwise, is it an additional character statistic?
@@ -850,7 +1011,7 @@ function parseRollString(message, rollString, testType) {
 
             // If it is the skill, adjust by its total dice instead of just its rating
             else if (isSkill(term)) {
-                let skill = characterMap[message.author.id][message.channel.id].activeSkills[term];
+                let skill = charData.activeSkills[term];
                 nDice += sign * Math.max(0, skill.totalDice);
             }
 
@@ -1021,12 +1182,12 @@ function doLoadCharacter(message) {
 
 function doUnloadCharacter(message) {
     if (!hasCharacter(message)) {
-        message.reply('you have no character loaded to unload');
+        message.reply('you have no active character to unload');
         return
     }
-    let alias = characterMap[message.author.id][message.channel.id].alias;
+    let alias = getCharacterAlias(message);
     message.reply('unloaded ' + (alias ? '"' + alias + '"' : 'character with no alias'));
-    delete characterMap[message.author.id][message.channel.id];
+    delete dataMap[message.author.id][message.channel.id].character[alias];
     saveData(message);
 }
 
@@ -1035,12 +1196,8 @@ function doCheckCharacter(message) {
     let channelId = message.channel.id;
 
     let str = 'no character found';
-    if (authorId in characterMap) {
-        if (channelId in characterMap[authorId]) {
-            let alias = characterMap[authorId][channelId].alias;
-            str = (alias ? 'alias "' + alias + '"' : 'character with no alias') + ' found';
-        }
-    }
+    let alias = getCharacterAlias(message);
+    str = !hasCharacter(message) ? str : (alias ? 'alias "' + alias + '"' : 'character with no alias') + ' found';
     message.reply(str);
 }
 
@@ -1218,8 +1375,9 @@ function doStoreCharacter(message, chummerJson, pastebinId) {
     */
 
     // Assign the character data to the user and channel
-    if (!(charData.owner in characterMap)) { characterMap[charData.owner] = {} };
-    characterMap[charData.owner][charData.channel] = charData;
+    ensureUserHasData(charData.owner, charData.channel);
+    dataMap[charData.owner][charData.channel].character[charData.alias] = charData;
+    dataMap[charData.owner][charData.channel].currentAlias = charData.alias;
 
     message.reply('loaded ' + (chummerJson.character.alias[0] ? '"' + chummerJson.character.alias[0] + '" ' : 'character without alias ') + 'from paste ' + pastebinId);
     saveData(message);
@@ -1256,12 +1414,12 @@ function stringCondenseLower(str) {
 }
 
 function hasCharacter(message) {
-    if (message.author.id in characterMap) {
-        if (message.channel.id in characterMap[message.author.id]) {
-            return true;
-        }
-    }
-    return false;
+    if (!(message.author.id in dataMap)) { return false };
+    if (!(message.channel.id in dataMap[message.author.id])) { return false };
+    let userData = dataMap[message.author.id][message.channel.id];
+    if (!('currentAlias' in userData)) { return false };
+    if (!(userData.currentAlias in userData.character)) { return false };
+    return true;
 }
 
 function messageAssert(message, condition, str) {
@@ -1312,6 +1470,39 @@ function rollDice(dc) {
 
 function currentDateTime() {
     return moment().format('YYYY-MM-DD hh:mm:ss')
+}
+
+function getCharacterAlias(message) {
+    let authorId = message.author.id;
+    let channelId = message.channel.id;
+    // TODO: Check content of message for overriding alias definition
+    if (!(authorId in dataMap)) { return false };
+    if (!(channelId in dataMap[authorId])) { return false };
+    return dataMap[authorId][channelId].currentAlias;
+}
+
+function getCharacterData(message) {
+    let authorId = message.author.id;
+    let channelId = message.channel.id;
+    let alias = getCharacterAlias(message);
+    if (alias === false) { return {} };
+    if (!(alias in dataMap[authorId][channelId].character)) { return {} }
+    return dataMap[authorId][channelId].character[alias];
+}
+
+function ensureUserHasData(owner, channel, alias) {
+    if (!(owner in dataMap)) { dataMap[owner] = {} };
+    if (!(channel in dataMap[owner])) { dataMap[owner][channel] = {} };
+    let userData = dataMap[owner][channel];
+    if (!('currentAlias' in userData)) { dataMap[owner][channel].currentAlias = false };
+    if (!('character' in userData)) { dataMap[owner][channel].character = {} };
+    if (!('macro' in userData)) { dataMap[owner][channel].macro = {} };
+}
+
+function getUserMacros(message) {
+    if (!(message.author.id) in dataMap) { return {} };
+    if (!(message.channel.id) in dataMap[message.author.id]) { return {} };
+    return dataMap[message.author.id][message.channel.id].macro;
 }
 
 function getRandomInt(min, max) {
