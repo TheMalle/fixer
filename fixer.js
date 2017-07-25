@@ -1,4 +1,4 @@
-const versionId = '0.3.0';
+const versionId = '0.3.1';
 const Discord = require('discord.js');
 var fetch = require('node-fetch');
 var parseString = require('xml2js').parseString;
@@ -27,7 +27,7 @@ const reCheckChar = /^\[\s*check(?:Char(?:acter)?)?\s*\].*$/i;
 const reUnloadChar = /^\[\s*unload(?:Char(?:acter)?)?\s*\].*$/i;
 const reIsAttribute = /^(Body|Agility|Reaction|Strength|Charisma|Intuition|Logic|Willpower|Edge|Magic|Resonance|Depth)$/i
 const reIsAdditionalCharacterStat = /^()$/i
-const reRollFormat = /^\s*\[\s*(([A-z0-9: \+\-]*?)\s*(?:\[(\d+)\])?\s*(!)?\s*(?:(v|a|T)\s*(\d+))?\s*(?:\[(\d+)\])?\s*(!)?\s*(?:,\s*(\d+))?)\s*((?:\s*,\s*[A-z0-9]+=\s*[0-9]+)*)\s*\].*$/
+const reRollFormat = /^\s*\[\s*(([A-z0-9: \+\-]*?)\s*(?:\[(\d+)\])?\s*(!)?\s*(?:(v|a|T)\s*(\d+))?\s*(?:\[(\d+)\])?\s*(!)?\s*(?:,\s*(\d+))?)\s*((?:\s*,\s*[A-z0-9]+\s*=\s*[0-9]+)*)\s*\].*$/
 const maxDiscordMessageLength = 2000;
 const discordCodeBlockWrapper = '```';
 var dataMap = {};
@@ -673,10 +673,10 @@ function doGeneralRoll(message) {
     let msg = message.content;
     let hadMacros = false;
     for (var ii = 0; ii < macroArray.length; ii++) {
-        let reReplaceMacro = new RegExp(':\s*' + macroArray[ii][0], 'g');
-        let replaceString = stringCondenseLower(macroArray[ii][1])
+        let reReplaceMacro = new RegExp(':\s*' + macroArray[ii][0], 'gi');
+        let replaceString = macroArray[ii][1];
         for (var jj = 0; jj < repDefs.length; jj += 2) {
-            let reRepDef = new RegExp('_' + repDefs[jj], 'g');
+            let reRepDef = new RegExp('_' + repDefs[jj], 'gi');
             replaceString = replaceString.replace(reRepDef, repDefs[jj + 1]);
         }
         hadMacros = reReplaceMacro.test(msg) ? true : hadMacros;
@@ -976,7 +976,7 @@ function parseRollString(message, rollString, testType) {
         }
 
         // Check if the term is a number
-        if (parseInt(term)) {
+        if (parseInt(term) === 0 || parseInt(term)) {
             nDice += sign * parseInt(term);
         }
 
