@@ -1,4 +1,4 @@
-const versionId = '0.2.0+0000';
+const versionId = '0.3.0';
 const Discord = require('discord.js');
 var fetch = require('node-fetch');
 var parseString = require('xml2js').parseString;
@@ -27,7 +27,7 @@ const reCheckChar = /^\[\s*check(?:Char(?:acter)?)?\s*\].*$/i;
 const reUnloadChar = /^\[\s*unload(?:Char(?:acter)?)?\s*\].*$/i;
 const reIsAttribute = /^(Body|Agility|Reaction|Strength|Charisma|Intuition|Logic|Willpower|Edge|Magic|Resonance|Depth)$/i
 const reIsAdditionalCharacterStat = /^()$/i
-const reRollFormat = /^\s*\[\s*(([A-z0-9: \+\-]*?[0-9 ]*)\s*(?:\[(\d+)\])?\s*(!)?\s*(v|a|T)?\s*(\d+)?\s*(?:\[(\d+)\])?\s*(!)?\s*(?:,\s*(\d+))?)\s*\].*$/
+const reRollFormat = /^\s*\[\s*(([A-z0-9: \+\-]*?)\s*(?:\[(\d+)\])?\s*(!)?\s*(?:(v|a|T)\s*(\d+))?\s*(?:\[(\d+)\])?\s*(!)?\s*(?:,\s*(\d+))?)\s*((?:\s*,\s*[A-z0-9]+=\s*[0-9]+)*)\s*\].*$/
 const maxDiscordMessageLength = 2000;
 const discordCodeBlockWrapper = '```';
 var dataMap = {};
@@ -627,6 +627,11 @@ function doDisplayMacroHelp(message) {
         + '**[delmacro: A] delete the macro A\n'
         + '**[delallmacros] delete all of your macros\n'
         + '\n'
+        + 'Macros can include placeholders, which are declared by an underscore (_) followed by the placeholder name. They must then be given values when the macro is used.\n'
+        + 'Examples:\n'
+        + '\t[macro: summon "summoning + magic [_F] v _F"]\n'
+        + '\t[:summon, F=6]'
+        + '\n'
         + 'Example use:\n'
         + '\t[macro: resistDrain "willpower + charisma"] now :resistDrain will be interpreted as "willpower + charisma"\n'
         + '\t[:resistDrain + 3] roll your macro resistDrain with 3 additional dice';
@@ -641,6 +646,16 @@ function doDisplayMacroHelp(message) {
 ####################################################################################
 */
 function doGeneralRoll(message) {
+    // Get the replacement definitions from the original message
+    let repDefs = reRollFormat.exec(message)[10] ? stringCondenseLower(reRollFormat.exec(message)[10]) : '';
+    if (repDefs.length > 0) {
+        if (repDefs.substr(0, 1) == ',') { repDefs = repDefs.substr(1) };
+        repDefs = repDefs.split(/[,=]/g)
+
+    } else {
+        repDefs = [];
+    }
+
     // Find macro definitions in message
     let macroDefs = getUserMacros(message);
 
@@ -654,13 +669,18 @@ function doGeneralRoll(message) {
         return a[0].length > b[0].length ? -1 : 1;
     });
 
-    // Go through all the defined macros and replace any which are used in the message
+    // Go through all the defined macros and replace any which are used in the message, after applying replacement definitions
     let msg = message.content;
     let hadMacros = false;
     for (var ii = 0; ii < macroArray.length; ii++) {
         let reReplaceMacro = new RegExp(':\s*' + macroArray[ii][0], 'g');
+        let replaceString = stringCondenseLower(macroArray[ii][1])
+        for (var jj = 0; jj < repDefs.length; jj += 2) {
+            let reRepDef = new RegExp('_' + repDefs[jj], 'g');
+            replaceString = replaceString.replace(reRepDef, repDefs[jj + 1]);
+        }
         hadMacros = reReplaceMacro.test(msg) ? true : hadMacros;
-        msg = msg.replace(reReplaceMacro, stringCondenseLower(macroArray[ii][1]));
+        msg = msg.replace(reReplaceMacro, replaceString);
     }
 
     // Get roll parts
@@ -673,6 +693,12 @@ function doGeneralRoll(message) {
     let secondaryLimit = rollParts[7] ? rollParts[7] : '';
     let secondaryPush = rollParts[8] ? rollParts[8] : '';
     let secondaryValue = rollParts[9] ? rollParts[9] : '';
+
+    // If any place holder is remaining in the roll string, alert and abort
+    let placeholder = /_([A-z0-9])/.exec(rollString);
+    if (placeholder) {
+        if (!(placeholder[1] == '')) { message.reply('missing value for placeholder "' + placeholder[1] + '"'); return }
+    }
 
     // Validate roll string and get roll statistics
     let rollStats = parseRollString(message, rollString, testType);
@@ -899,7 +925,7 @@ function parseRollString(message, rollString, testType) {
     let stats = {
         'valid': false,
         'dice': null,
-        'edge': !hasCharacter(message) ? 0 : getCharacterData(message).attributes['EDG'].totalValue
+        'edge': 0
     }
 
     // Special case: availability test with blank rollstring. Handle as regular negotiation
@@ -1022,6 +1048,7 @@ function parseRollString(message, rollString, testType) {
         }
     }
 
+    stats.edge = (nSkills > 0 || nAttributes > 0) ? getCharacterData(message).attributes['EDG'].totalValue : 0;
     stats.dice = Math.max(0, nDice);
     stats.valid = true;
 
