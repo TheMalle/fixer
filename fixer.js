@@ -1,4 +1,4 @@
-const versionId = '0.3.1';
+const versionId = '0.4.0';
 const Discord = require('discord.js');
 var fetch = require('node-fetch');
 var parseString = require('xml2js').parseString;
