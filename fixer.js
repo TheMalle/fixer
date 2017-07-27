@@ -7,7 +7,7 @@ const moment = require('moment');
 
 // Define required and optional inputs
 const reqArgs = ['token', 'paste', 'user', 'password', 'devkey'];
-const optArgs = [];
+const optArgs = ['glitch'];
 var args = {};
 
 const client = new Discord.Client();
@@ -171,8 +171,15 @@ optArgs.forEach(function (e) {
 
 // Parse inputs
 process.argv.forEach(function (val, index, array) {
-    for (var i = 0; i < reqArgs.length; i++) {
-        let reArg = new RegExp('\-\(' + reqArgs[i] + '\)\=([^\ ]+)');
+    for (var ii = 0; ii < reqArgs.length; ii++) {
+        let reArg = new RegExp('\-\(' + reqArgs[ii] + '\)\=([^\ ]+)');
+        if (reArg.test(val)) {
+            let matches = reArg.exec(val);
+            args[matches[1]] = matches[2];
+        }
+    }
+    for (var ii = 0; ii < reqArgs.length; ii++) {
+        let reArg = new RegExp('\-\(' + optArgs[ii] + '\)\=([^\ ]+)');
         if (reArg.test(val)) {
             let matches = reArg.exec(val);
             args[matches[1]] = matches[2];
@@ -791,7 +798,7 @@ function doGeneralRoll(message) {
 function doSimpleTest(message, parsedRollString, nDice, limit, pushTheLimit, edge) {
     var dc = new DiceCode(nDice, limit, pushTheLimit, (pushTheLimit ? edge : 0));
     var roll = rollDice(dc);
-    message.reply((parsedRollString ? 'Rolled ' + parsedRollString + ' for ' : '') + '**' + roll.hits + '** hit' + (roll.hits == 1 ? '' : 's') + ' (' + roll.roll + (roll.limitUsed == true ? '; limit ' + roll.limit + ' exceeded' : '') + ')');
+    message.reply((parsedRollString ? 'rolled ' + parsedRollString + ' for ' : '') + '**' + roll.hits + '** hit' + (roll.hits == 1 ? '' : 's') + (roll.glitch ? ' and a **' + (roll.criticalGlitch ? 'critical ' : '') + 'glitch**' : '') + ' (' + roll.roll + (roll.limitUsed == true ? '; limit ' + roll.limit + ' exceeded' : '') + ')');
 }
 
 function doThresholdTest(message, parsedRollString, nDice, limit, pushTheLimit, secondaryDice, edge) {
@@ -799,7 +806,7 @@ function doThresholdTest(message, parsedRollString, nDice, limit, pushTheLimit, 
     var roll = rollDice(dc);
     var threshold = secondaryDice;
     var margin = roll.hits - threshold;
-    message.reply((parsedRollString ? 'Rolled ' + parsedRollString + ' for ' : '') + (margin >= 0 ? '**success**' : '**failure**') + ' (' + roll.roll + '; margin: **' + margin + '**)');
+    message.reply((parsedRollString ? 'rolled ' + parsedRollString + ' for ' : '') + (margin >= 0 ? '**success**' : '**failure**') + (roll.glitch ? ' and a **' + (roll.criticalGlitch ? 'critical ' : '') + 'glitch**' : '') + ' (' + roll.roll + '; margin: **' + margin + '**)');
 }
 
 function doOpposedTest(message, parsedRollString, nDice, limit, pushTheLimit, secondaryDice, secondaryLimit, secondaryPush, edge) {
@@ -808,11 +815,11 @@ function doOpposedTest(message, parsedRollString, nDice, limit, pushTheLimit, se
     var roll1 = rollDice(dc1);
     var roll2 = rollDice(dc2);
     var netHits = roll1.hits - roll2.hits;
-    message.reply((parsedRollString ? 'Rolled ' + parsedRollString + ' for ' : '') + '**' + netHits + '** net hit' + (netHits == 1 ? '' : 's')
+    message.reply((parsedRollString ? 'rolled ' + parsedRollString + ' for ' : '') + '**' + netHits + '** net hit' + (netHits == 1 ? '' : 's')
         + ' ('
-        + '**' + roll1.hits + '** hit' + (roll1.hits == 1 ? '' : 's') + ' (' + roll1.roll + (roll1.limitUsed == true ? '; limit ' + roll1.limit + ' exceeded' : '') + ')'
+        + '**' + roll1.hits + '** hit' + (roll1.hits == 1 ? '' : 's') + (roll1.glitch ? ' and a **' + (roll1.criticalGlitch ? 'critical ' : '') + 'glitch**' : '') + ' (' + roll1.roll + (roll1.limitUsed == true ? '; limit ' + roll1.limit + ' exceeded' : '') + ')'
         + ' vs '
-        + '**' + roll2.hits + '** hit' + (roll2.hits == 1 ? '' : 's') + ' (' + roll2.roll + (roll2.limitUsed == true ? '; limit ' + roll2.limit + ' exceeded' : '') + ')'
+        + '**' + roll2.hits + '** hit' + (roll2.hits == 1 ? '' : 's') + (roll2.glitch ? ' and a **' + (roll2.criticalGlitch ? 'critical ' : '') + 'glitch**' : '') + ' (' + roll2.roll + (roll2.limitUsed == true ? '; limit ' + roll2.limit + ' exceeded' : '') + ')'
         + ')');
 }
 
@@ -825,7 +832,7 @@ function doAvailabilityTest(message, parsedRollString, nDice, limit, pushTheLimi
 
     let availTime = getAvailabilityTime(netHits, secondaryValue);
 
-    message.reply((parsedRollString ? 'Rolled ' + parsedRollString + ' for ' : 'item is ') + '**' + (availTime.available ? '' : 'un') + 'available** ' + (availTime.available ? 'in ' + availTime.string : '')
+    message.reply((parsedRollString ? 'rolled ' + parsedRollString + ' for ' : 'item is ') + '**' + (availTime.available ? '' : 'un') + 'available** ' + (availTime.available ? 'in ' + availTime.string : '') + (roll1.glitch ? 'and a **' + (roll1.criticalGlitch ? 'critical ' : '') + 'glitch**' : '')
         + ' ('
         + '**' + roll1.hits + '** hit' + (roll1.hits == 1 ? '' : 's') + ' (' + roll1.roll + (roll1.limitUsed == true ? '; limit ' + roll1.limit + ' exceeded' : '') + ')'
         + ' vs '
@@ -1476,6 +1483,7 @@ function rollDice(dc) {
     var hits = 0;
     var additionalDice = 0;
     var rollSum = 0;
+    var nOnes = 0;
     for (var iDice = 0; iDice < parseInt(dc.dice) + additionalDice; iDice++) {
         roll[iDice] = getRandomInt(1, 6);
         hits += roll[iDice] >= 5 ? 1 : 0;
@@ -1483,6 +1491,7 @@ function rollDice(dc) {
         if (roll[iDice] == 6 && dc.ruleOfSix) {
             additionalDice += 1;
         }
+        nOnes += roll[iDice] == 1 ? 1 : 0;
     }
 
     var result = [];
@@ -1491,6 +1500,25 @@ function rollDice(dc) {
     result.hits = result.limitUsed ? dc.limit : hits;
     result.roll = roll;
     result.sum = rollSum;
+    switch (args.glitch.toLowerCase()) {
+        case 'classic':
+            result.glitch = nOnes >= Math.ceil(dc.dice / 2);
+            break;
+        case '>u':
+            result.glitch = nOnes > Math.ceil(dc.dice / 2);
+            break;
+        case '>d':
+            result.glitch = nOnes > Math.floor(dc.dice / 2);
+            break;
+        case '=u':
+            result.glitch = nOnes >= Math.ceil(dc.dice / 2);
+        case '=d':
+            result.glitch = nOnes >= Math.floor(dc.dice / 2);
+            break;
+        default:
+            result.glitch = nOnes > Math.ceil(dc.dice / 2);
+    }
+    result.criticalGlitch = result.glitch && (result.hits == 0);
 
     return result;
 }
