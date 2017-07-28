@@ -1,4 +1,4 @@
-const versionId = '0.4.1';
+const versionId = '0.4.2';
 const Discord = require('discord.js');
 var fetch = require('node-fetch');
 var parseString = require('xml2js').parseString;
@@ -545,7 +545,8 @@ function doDisplayGeneralHelp(message) {
         + '\t**[check]** check if you have a character loaded, also available as [checkChar] and [checkCharacter]\n'
         + '\t**[unload]** unload a loaded character, also available as [unloadChar] and [unloadCharacter]\n'
         + '\n'
-        + 'Loaded characters will ' + (restrictedMode ? '**not** ' : '') + 'remain accessible if the bot restarts' + (restrictedMode ? ' as it is in restricted mode' : '') + '.';
+        + 'Loaded characters will ' + (restrictedMode ? '**not** ' : '') + 'remain accessible if the bot restarts' + (restrictedMode ? ' as it is in restricted mode' : '') + '.\n'
+        + 'Glitch configuration is set to "' + (args.glitch ? args.glitch : 'default') + '"';
     /*
         + '\t**[dodge]** alias for [reaction+intuition[physical]]\n'
         + '\t**[judge]** alias for [intuition+charisma]\n'
@@ -1491,7 +1492,7 @@ function rollDice(dc) {
         if (roll[iDice] == 6 && dc.ruleOfSix) {
             additionalDice += 1;
         }
-        nOnes += roll[iDice] == 1 ? 1 : 0;
+        nOnes += roll[iDice] === 1 ? 1 : 0;
     }
 
     var result = [];
@@ -1502,21 +1503,21 @@ function rollDice(dc) {
     result.sum = rollSum;
     switch (args.glitch.toLowerCase()) {
         case 'classic':
-            result.glitch = nOnes >= Math.ceil(dc.dice / 2);
+            result.glitch = nOnes >= Math.ceil((dc.dice + additionalDice) / 2);
             break;
         case '>u':
-            result.glitch = nOnes > Math.ceil(dc.dice / 2);
+            result.glitch = nOnes > Math.ceil((dc.dice + additionalDice) / 2);
             break;
         case '>d':
-            result.glitch = nOnes > Math.floor(dc.dice / 2);
+            result.glitch = nOnes > Math.floor((dc.dice + additionalDice) / 2);
             break;
         case '=u':
-            result.glitch = nOnes >= Math.ceil(dc.dice / 2);
+            result.glitch = nOnes >= Math.ceil((dc.dice + additionalDice) / 2);
         case '=d':
-            result.glitch = nOnes >= Math.floor(dc.dice / 2);
+            result.glitch = nOnes >= Math.floor((dc.dice + additionalDice) / 2);
             break;
         default:
-            result.glitch = nOnes > Math.ceil(dc.dice / 2);
+            result.glitch = nOnes > Math.ceil((dc.dice + additionalDice) / 2);
     }
     result.criticalGlitch = result.glitch && (result.hits == 0);
 
