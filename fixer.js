@@ -1,4 +1,4 @@
-const versionId = '0.4.0';
+const versionId = '0.4.1';
 const Discord = require('discord.js');
 var fetch = require('node-fetch');
 var parseString = require('xml2js').parseString;
@@ -1555,8 +1555,8 @@ function ensureUserHasData(owner, channel, alias) {
 }
 
 function getUserMacros(message) {
-    if (!(message.author.id) in dataMap) { return {} };
-    if (!(message.channel.id) in dataMap[message.author.id]) { return {} };
+    if (!(message.author.id in dataMap)) { return {} };
+    if (!(message.channel.id in dataMap[message.author.id])) { return {} };
     return dataMap[message.author.id][message.channel.id].macro;
 }
 
