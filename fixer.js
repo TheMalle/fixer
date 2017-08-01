@@ -1,4 +1,4 @@
-const versionId = '0.4.2';
+const versionId = '0.4.4';
 const Discord = require('discord.js');
 var fetch = require('node-fetch');
 var parseString = require('xml2js').parseString;
@@ -952,7 +952,9 @@ function parseRollString(message, rollString, testType) {
     // To validate the roll string, find all atomic parts of the roll string
     let reRollAtoms = /\s*[\+\-]?\s*[A-z0-9:]+/g;
     let rollParts = rollString.match(reRollAtoms);
-
+    
+    if (!rollParts) { return stats };
+    
     /*
      Go through the atomic parts and verify that either:
         1. It is a dice pool modifier (e.g. +5, -2);
@@ -1513,6 +1515,7 @@ function rollDice(dc) {
             break;
         case '=u':
             result.glitch = nOnes >= Math.ceil((dc.dice + additionalDice) / 2);
+            break;
         case '=d':
             result.glitch = nOnes >= Math.floor((dc.dice + additionalDice) / 2);
             break;
