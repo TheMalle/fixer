@@ -1,4 +1,4 @@
-const versionId = '0.4.3';
+const versionId = '0.5.0';
 const Discord = require('discord.js');
 var fetch = require('node-fetch');
 var parseString = require('xml2js').parseString;
@@ -27,7 +27,7 @@ const reCheckChar = /^\[\s*check(?:Char(?:acter)?)?\s*\].*$/i;
 const reUnloadChar = /^\[\s*unload(?:Char(?:acter)?)?\s*\].*$/i;
 const reIsAttribute = /^(Body|Agility|Reaction|Strength|Charisma|Intuition|Logic|Willpower|Edge|Magic|Resonance|Depth)$/i
 const reIsAdditionalCharacterStat = /^()$/i
-const reRollFormat = /^\s*\[\s*(([A-z0-9: \+\-]*?)\s*(?:\[(\d+)\])?\s*(!)?\s*(?:(v|a|T)\s*(\d+))?\s*(?:\[(\d+)\])?\s*(!)?\s*(?:,\s*(\d+))?)\s*((?:\s*,\s*[A-z0-9]+\s*=\s*[0-9]+)*)\s*\].*$/
+const reRollFormat = /^\s*\[\s*(([A-z0-9: \+\-]+?)\s*(?:\((\d+)\))?\s*(!)?\s*(?:(v|a|T)\s*([0-9: \+\-]+?))?\s*(?:\((\d+)\))?\s*(!)?\s*(?:,\s*(\d+))?)\s*((?:\s*,\s*[A-z0-9]+\s*=\s*[0-9\-]+)*)\s*\].*$/
 const maxDiscordMessageLength = 2000;
 const discordCodeBlockWrapper = '```';
 var dataMap = {};
@@ -538,16 +538,18 @@ function doDisplayGeneralHelp(message) {
         + '\t**[XTY]** threshold test using X dice and threshold Y, e.g. [12T2]\n'
         + '\t**[XaY,C]** availability test using X dice, availability Y and cost C, e.g. [12a4,150]. The cost can be omitted.\n'
         + '\t**NOTE:** the following modifiers can be added to tests (in the listed order):\n'
-        + '\t\t**[X]** to set the limit to X, e.g. [12[3]]\n'
+        + '\t\t**(X)** to set the limit to X, e.g. [12(3)]\n'
         + '\t\t**!** to push the limit before the roll [12!]\n'
-        + '\t\t**NOTE:** Opposed tests allow modifiers on both dice pools, e.g. [12[3]!v8!]\n'
+        + '\t\t**NOTE:** Opposed tests allow modifiers on both dice pools, e.g. [12(3)!v8!]\n'
         + '\t**[get: pastebinId]** load character from the give paste on pastebin.com, e.g. [get: LdJXHX5e], also available as [getChar: LdJXHX5e] and [getCharacter: LdJXHX5e]\n'
         + '\t**[check]** check if you have a character loaded, also available as [checkChar] and [checkCharacter]\n'
         + '\t**[unload]** unload a loaded character, also available as [unloadChar] and [unloadCharacter]\n'
         + '\n'
-        + 'Loaded characters will ' + (restrictedMode ? '**not** ' : '') + 'remain accessible if the bot restarts' + (restrictedMode ? ' as it is in restricted mode' : '') + '.\n'
-        + 'Glitch configuration is set to "' + (args.glitch ? args.glitch : 'default') + '"';
+        + 'Loaded characters will ' + (restrictedMode ? '**not** ' : '') + 'remain accessible if the bot restarts' + (restrictedMode ? ' as it is in restricted mode' : '') + '.';
     /*
+        + '\t**[composure]**\n'
+        + '\t**[memory]**\n'
+
         + '\t**[dodge]** alias for [reaction+intuition[physical]]\n'
         + '\t**[judge]** alias for [intuition+charisma]\n'
         + '\t**[lift]** alias for [strength+body]\n'
@@ -608,9 +610,9 @@ function doDisplayCharacterHelp(message) {
         + ' If edge is used to push the limit, your edge dice are automatically added (as long as the roll contains at least one skill or attribute). Examples:\n'
         + '\t**[perception]** roll your perception + intuition\n'
         + '\t**[perception+willpower]** roll your perception + willpower\n'
-        + '\t**[logic+willpower[4]T3]** roll logic and willpower with a limit of 4 against a threshold of 3\n'
+        + '\t**[logic+willpower(4)T3]** roll logic and willpower with a limit of 4 against a threshold of 3\n'
         + '\t**[logic+willpower!T3]** roll logic and willpower while pushing the limit against a threshold of 3\n'
-        + '\t**[logic+willpower!v8[3]]** roll logic and willpower while pushing the limit against a dice pool of 8 dice with a limit of 3\n'
+        + '\t**[logic+willpower!v8(3)]** roll logic and willpower while pushing the limit against a dice pool of 8 dice with a limit of 3\n'
         + '\n'
         + 'Loading a character also allows you to roll initiative:\n'
         + '\t**[i]** roll initiative (defaults to meat), also available as [init] or [initiative] \n'
@@ -635,14 +637,19 @@ function doDisplayMacroHelp(message) {
         + '**[delmacro: A] delete the macro A\n'
         + '**[delallmacros] delete all of your macros\n'
         + '\n'
-        + 'Macros can include placeholders, which are declared by an underscore (_) followed by the placeholder name. They must then be given values when the macro is used.\n'
+        + 'Macros can include placeholders with customized values for each roll. They are  declared by an underscore (_) followed by the placeholder name.\n'
+        + 'Note that undefined placeholders will default to 0.\n'
         + 'Examples:\n'
-        + '\t[macro: summon "summoning + magic [_F] v _F"]\n'
+        + '\t[macro: summon "summoning + magic (_F) v _F"]\n'
         + '\t[:summon, F=6]'
         + '\n'
-        + 'Example use:\n'
         + '\t[macro: resistDrain "willpower + charisma"] now :resistDrain will be interpreted as "willpower + charisma"\n'
         + '\t[:resistDrain + 3] roll your macro resistDrain with 3 additional dice';
+        + '\n'
+        + '\t[macro: summon "summoning + magic + _Mod (_F) v _F"]\n'
+        + '\t[:summon, F=6]'
+        + '\t[:summon, F=6, Mod=2]'
+        + '\t[:summon, F=6, Mod=-2]'
     message.reply(helpmsg);
 }
 
@@ -691,28 +698,34 @@ function doGeneralRoll(message) {
         msg = msg.replace(reReplaceMacro, replaceString);
     }
 
+    // Then for any remaining replacement definitions in the string, replace them by default value (0)
+    msg = msg.replace(/_[^\[\]\(\)\ )]+/gi,"0");    
+
     // Get roll parts
     let rollParts = reRollFormat.exec(msg);
+    if (!messageAssert(message,rollParts,'input format not recognized: ' + msg)) { return };
     let rollString = rollParts[2] ? stringCondenseLower(rollParts[2]) : '';
     let limit = rollParts[3] ? parseInt(rollParts[3]) : '';
     let pushTheLimit = rollParts[4] ? rollParts[4] : '';
     let testType = rollParts[5] ? rollParts[5] : '';
-    let secondaryDice = rollParts[6] ? rollParts[6] : '';
+    let secondaryRollString = rollParts[6] ? rollParts[6] : '';
     let secondaryLimit = rollParts[7] ? rollParts[7] : '';
     let secondaryPush = rollParts[8] ? rollParts[8] : '';
     let secondaryValue = rollParts[9] ? rollParts[9] : '';
 
     // If any place holder is remaining in the roll string, alert and abort
-    let placeholder = /_([A-z0-9])/.exec(rollString);
+    let placeholder = /_([A-z0-9]+)/.exec(rollParts[2]);
     if (placeholder) {
         if (!(placeholder[1] == '')) { message.reply('missing value for placeholder "' + placeholder[1] + '"'); return }
     }
 
     // Validate roll string and get roll statistics
     let rollStats = parseRollString(message, rollString, testType);
+    let rollStats2 = parseRollString(message, secondaryRollString, testType);
     if (!rollStats.valid) { return };
     let nDice = rollStats.dice;
     let edge = rollStats.edge;
+    let secondaryDice = rollStats2.valid ? rollStats2.dice.toString() : "";
     let parsedMessage = hadMacros ? '[' + reRollFormat.exec(msg)[1].trim() + ']' : '';
 
     // validate other inputs based on test type
@@ -799,7 +812,11 @@ function doGeneralRoll(message) {
 function doSimpleTest(message, parsedRollString, nDice, limit, pushTheLimit, edge) {
     var dc = new DiceCode(nDice, limit, pushTheLimit, (pushTheLimit ? edge : 0));
     var roll = rollDice(dc);
-    message.reply((parsedRollString ? 'rolled ' + parsedRollString + ' for ' : '') + '**' + roll.hits + '** hit' + (roll.hits == 1 ? '' : 's') + (roll.glitch ? ' and a **' + (roll.criticalGlitch ? 'critical ' : '') + 'glitch**' : '') + ' (' + roll.roll + (roll.limitUsed == true ? '; limit ' + roll.limit + ' exceeded' : '') + ')');
+    message.reply((parsedRollString ? 'rolled ' + parsedRollString + ' for ' : '') + '**' + roll.hits + '** hit' + (roll.hits == 1 ? '' : 's') + (roll.glitch ? ' and a **' + (roll.criticalGlitch ? 'critical ' : '') + 'glitch**' : '') 
+                    + ' (' + roll.roll 
+                    + '; ' + (roll.baseDice != roll.totalDice ? 'base ' : '') + 'dice: **' + roll.baseDice + '**'
+                    + (roll.baseDice != roll.totalDice ? '; total dice: **' + roll.totalDice + '**' : '')
+                    + (roll.limitUsed == true ? '; limit ' + roll.limit + ' exceeded' : '') + ')');
 }
 
 function doThresholdTest(message, parsedRollString, nDice, limit, pushTheLimit, secondaryDice, edge) {
@@ -807,7 +824,12 @@ function doThresholdTest(message, parsedRollString, nDice, limit, pushTheLimit, 
     var roll = rollDice(dc);
     var threshold = secondaryDice;
     var margin = roll.hits - threshold;
-    message.reply((parsedRollString ? 'rolled ' + parsedRollString + ' for ' : '') + (margin >= 0 ? '**success**' : '**failure**') + (roll.glitch ? ' and a **' + (roll.criticalGlitch ? 'critical ' : '') + 'glitch**' : '') + ' (' + roll.roll + '; margin: **' + margin + '**)');
+    message.reply((parsedRollString ? 'rolled ' + parsedRollString + ' for ' : '') + (margin >= 0 ? '**success**' : '**failure**') + (roll.glitch ? ' and a **' + (roll.criticalGlitch ? 'critical ' : '') + 'glitch**' : '') 
+                    + ' (' + roll.roll
+                    + '; ' + (roll.baseDice != roll.totalDice ? 'base ' : '') + 'dice: **' + roll.baseDice + '**'
+                    + (roll.baseDice != roll.totalDice ? '; total dice: **' + roll.totalDice + '**' : '')
+                    + '; threshold: **' + threshold + '**'
+                    + '; margin: **' + margin + '**)');
 }
 
 function doOpposedTest(message, parsedRollString, nDice, limit, pushTheLimit, secondaryDice, secondaryLimit, secondaryPush, edge) {
@@ -818,9 +840,21 @@ function doOpposedTest(message, parsedRollString, nDice, limit, pushTheLimit, se
     var netHits = roll1.hits - roll2.hits;
     message.reply((parsedRollString ? 'rolled ' + parsedRollString + ' for ' : '') + '**' + netHits + '** net hit' + (netHits == 1 ? '' : 's')
         + ' ('
-        + '**' + roll1.hits + '** hit' + (roll1.hits == 1 ? '' : 's') + (roll1.glitch ? ' and a **' + (roll1.criticalGlitch ? 'critical ' : '') + 'glitch**' : '') + ' (' + roll1.roll + (roll1.limitUsed == true ? '; limit ' + roll1.limit + ' exceeded' : '') + ')'
+            + '**' + roll1.hits + '** hit' + (roll1.hits == 1 ? '' : 's') + (roll1.glitch ? ' and a **' + (roll1.criticalGlitch ? 'critical ' : '') + 'glitch**' : '') 
+            + ' (' 
+                + roll1.roll
+                + '; ' + (roll1.baseDice != roll1.totalDice ? 'base ' : '') + 'dice: **' + roll1.baseDice + '**'
+                + (roll1.baseDice != roll1.totalDice ? '; total dice: **' + roll1.totalDice + '**' : '')
+                + (roll1.limitUsed == true ? '; limit ' + roll1.limit + ' exceeded' : '') 
+            + ')'
         + ' vs '
-        + '**' + roll2.hits + '** hit' + (roll2.hits == 1 ? '' : 's') + (roll2.glitch ? ' and a **' + (roll2.criticalGlitch ? 'critical ' : '') + 'glitch**' : '') + ' (' + roll2.roll + (roll2.limitUsed == true ? '; limit ' + roll2.limit + ' exceeded' : '') + ')'
+            + '**' + roll2.hits + '** hit' + (roll2.hits == 1 ? '' : 's') + (roll2.glitch ? ' and a **' + (roll2.criticalGlitch ? 'critical ' : '') + 'glitch**' : '')
+            + ' (' 
+                + roll2.roll
+                + '; ' + (roll2.baseDice != roll2.totalDice ? 'base ' : '') + 'dice: **' + roll2.baseDice + '**'
+                + (roll2.baseDice != roll2.totalDice ? '; total dice: **' + roll2.totalDice + '**' : '')
+                + (roll2.limitUsed == true ? '; limit ' + roll2.limit + ' exceeded' : '')
+            + ')'
         + ')');
 }
 
@@ -833,11 +867,24 @@ function doAvailabilityTest(message, parsedRollString, nDice, limit, pushTheLimi
 
     let availTime = getAvailabilityTime(netHits, secondaryValue);
 
-    message.reply((parsedRollString ? 'rolled ' + parsedRollString + ' for ' : 'item is ') + '**' + (availTime.available ? '' : 'un') + 'available** ' + (availTime.available ? 'in ' + availTime.string : '') + (roll1.glitch ? 'and a **' + (roll1.criticalGlitch ? 'critical ' : '') + 'glitch**' : '')
+    message.reply((parsedRollString ? 'rolled ' + parsedRollString + ' for ' : '') + '**' + netHits + '** net hit' + (netHits == 1 ? '' : 's') + (roll1.glitch ? ' and a **' + (roll1.criticalGlitch ? 'critical ' : '') + 'glitch**' : '') + '. ' 
+        + 'Item is **' + (availTime.available ? '' : 'un') + 'available**' + (availTime.available ? ' in ' + availTime.string : '') + (availTime.available === false ? ' for ' + availTime.string : '')
         + ' ('
-        + '**' + roll1.hits + '** hit' + (roll1.hits == 1 ? '' : 's') + ' (' + roll1.roll + (roll1.limitUsed == true ? '; limit ' + roll1.limit + ' exceeded' : '') + ')'
+            + '**' + roll1.hits + '** hit' + (roll1.hits == 1 ? '' : 's')
+            + ' (' 
+                + roll1.roll
+                + '; ' + (roll1.baseDice != roll1.totalDice ? 'base ' : '') + 'dice: **' + roll1.baseDice + '**'
+                + (roll1.baseDice != roll1.totalDice ? '; total dice: **' + roll1.totalDice + '**' : '')
+                + (roll1.limitUsed == true ? '; limit ' + roll1.limit + ' exceeded' : '') 
+            + ')'
         + ' vs '
-        + '**' + roll2.hits + '** hit' + (roll2.hits == 1 ? '' : 's') + ' (' + roll2.roll + (roll2.limitUsed == true ? '; limit ' + roll2.limit + ' exceeded' : '') + ')'
+            + '**' + roll2.hits + '** hit' + (roll2.hits == 1 ? '' : 's')
+            + ' (' 
+                + roll2.roll
+                + '; ' + (roll2.baseDice != roll2.totalDice ? 'base ' : '') + 'dice: **' + roll2.baseDice + '**'
+                + (roll2.baseDice != roll2.totalDice ? '; total dice: **' + roll2.totalDice + '**' : '')
+                + (roll2.limitUsed == true ? '; limit ' + roll2.limit + ' exceeded' : '')
+            + ')'
         + ')');
 }
 
@@ -850,16 +897,14 @@ function getAvailabilityTime(netHits, value) {
     else if (value > 100) { baseTime = 1 }
     else { baseTime = 0.25 };
 
-    let timeFactor = 2;
-    if (netHits < 0) { timeFactor = -1 }
-    else if (netHits > 0) { timeFactor = 1 / netHits }
+    let timeFactor = netHits > 0 ? 1/netHits : 2;
 
     let totalTime = null;
     if (baseTime && timeFactor) { totalTime = baseTime * timeFactor }
 
-    let timeString = 'unavailable';
+    let timeString = null;
     if (!totalTime) {
-        if (netHits == 0) { timeString = 'twice the base time' }
+        if (netHits <= 0) { timeString = 'twice the base time' }
         else if (netHits == 1) { timeString = 'the base time' }
         else if (netHits == 2) { timeString = 'half the base time' }
         else if (netHits == 3) { timeString = 'a third of the base time' }
@@ -898,7 +943,7 @@ function getAvailabilityTime(netHits, value) {
         }
     }
 
-    let result = { 'factor': timeFactor, 'total': totalTime, 'string': timeString, 'available': timeFactor > 0 }
+    let result = { 'factor': timeFactor, 'total': totalTime, 'string': timeString, 'available': netHits >= 0 }
     return result;
 }
 
@@ -952,9 +997,9 @@ function parseRollString(message, rollString, testType) {
     // To validate the roll string, find all atomic parts of the roll string
     let reRollAtoms = /\s*[\+\-]?\s*[A-z0-9:]+/g;
     let rollParts = rollString.match(reRollAtoms);
-    
+
     if (!rollParts) { return stats };
-    
+
     /*
      Go through the atomic parts and verify that either:
         1. It is a dice pool modifier (e.g. +5, -2);
@@ -971,7 +1016,7 @@ function parseRollString(message, rollString, testType) {
 
     for (var ii = 0; ii < rollParts.length; ii++) {
         // Get the current term in the roll string
-        let term = rollParts[ii];
+        let term = rollParts[ii].trim();
 
         // Check if a sign was used (if so, remove it), otherwise just it as positive
         let sign = 1;
@@ -997,6 +1042,7 @@ function parseRollString(message, rollString, testType) {
             // Count up number of skills and accumulate dice from rating
             nSkills += 1;
             let skill = charData.activeSkills[term];
+            if (!messageAssert(message, skill, 'could not find skill ' + term + ' for your character')) { return stats };
             nDice += sign * Math.max(0, skill.totalDice - skill.attributeTotal);
         }
 
@@ -1004,7 +1050,9 @@ function parseRollString(message, rollString, testType) {
         else if (isAttribute(term)) {
             if (!messageAssert(message, hasCharacter(message), 'you need to load a character to use attribute rolls (attribute "' + term + '" detected in roll)')) { return stats };
             nAttributes += 1;
-            nDice += sign * charData.attributes[attributeMap[term]].totalValue;
+            let attribute = charData.attributes[attributeMap[term]];
+            if (!messageAssert(message, attribute, 'could not find attribute ' + term + ' for your character')) { return stats };
+            nDice += sign * attribute.totalValue;
         }
 
         // Otherwise, is it an additional character statistic?
@@ -1013,6 +1061,7 @@ function parseRollString(message, rollString, testType) {
             if (!messageAssert(message, hasCharacter(message), 'you need to load a character to use character statistic rolls (statistic "' + term + '" detected in roll)')) { return stats };
             nStats += 1;
             // TODO: Load additional statistics
+            if (!messageAssert(message, false, 'support for additional character statistics (' + term + ') not yet implemented')) { return stats };
             nDice += sign * 0;
         }
 
@@ -1487,6 +1536,7 @@ function rollDice(dc) {
     var additionalDice = 0;
     var rollSum = 0;
     var nOnes = 0;
+
     for (var iDice = 0; iDice < parseInt(dc.dice) + additionalDice; iDice++) {
         roll[iDice] = getRandomInt(1, 6);
         hits += roll[iDice] >= 5 ? 1 : 0;
@@ -1497,7 +1547,10 @@ function rollDice(dc) {
         nOnes += roll[iDice] === 1 ? 1 : 0;
     }
 
+
     var result = [];
+    result.baseDice = parseInt(dc.dice);
+    result.totalDice = result.baseDice + additionalDice;
     result.limit = dc.limit;
     result.limitUsed = (hits > dc.limit && dc.limit) ? true : false;
     result.hits = result.limitUsed ? dc.limit : hits;
