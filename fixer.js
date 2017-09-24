@@ -1537,7 +1537,6 @@ function rollDice(dc) {
     var rollSum = 0;
     var nOnes = 0;
 
-
     for (var iDice = 0; iDice < parseInt(dc.dice) + additionalDice; iDice++) {
         roll[iDice] = getRandomInt(1, 6);
         hits += roll[iDice] >= 5 ? 1 : 0;
@@ -1545,7 +1544,7 @@ function rollDice(dc) {
         if (roll[iDice] == 6 && dc.ruleOfSix) {
             additionalDice += 1;
         }
-        nOnes += roll[iDice] == 1 ? 1 : 0;
+        nOnes += roll[iDice] === 1 ? 1 : 0;
     }
 
 
@@ -1559,7 +1558,7 @@ function rollDice(dc) {
     result.sum = rollSum;
     switch (args.glitch.toLowerCase()) {
         case 'classic':
-        result.glitch = nOnes >= Math.ceil((dc.dice + additionalDice) / 2);
+            result.glitch = nOnes >= Math.ceil((dc.dice + additionalDice) / 2);
             break;
         case '>u':
             result.glitch = nOnes > Math.ceil((dc.dice + additionalDice) / 2);
