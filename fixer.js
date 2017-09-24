@@ -1,4 +1,4 @@
-const versionId = '0.5.0';
+const versionId = '0.5.1';
 const Discord = require('discord.js');
 var fetch = require('node-fetch');
 var parseString = require('xml2js').parseString;
@@ -633,9 +633,9 @@ function doDisplayMacroHelp(message) {
         + ' Macro names must consist of alphanumeric characters without spaces.\n'
         + '\n'
         + '**[macrolist]** shows all of your macros\n'
-        + '**[macro: A "B"] creates the macro which replaces ":A" in all your rolls with "B"\n'
-        + '**[delmacro: A] delete the macro A\n'
-        + '**[delallmacros] delete all of your macros\n'
+        + '**[macro: A "B"]** creates the macro which replaces ":A" in all your rolls with "B"\n'
+        + '**[delmacro: A]** delete the macro A\n'
+        + '**[delallmacros]** delete all of your macros\n'
         + '\n'
         + 'Macros can include placeholders with customized values for each roll. They are  declared by an underscore (_) followed by the placeholder name.\n'
         + 'Note that undefined placeholders will default to 0.\n'
