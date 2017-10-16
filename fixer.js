@@ -1,4 +1,4 @@
-const versionId = '0.5.1';
+const versionId = '0.5.2';
 const Discord = require('discord.js');
 var fetch = require('node-fetch');
 var parseString = require('xml2js').parseString;
@@ -27,6 +27,8 @@ const reCheckChar = /^\[\s*check(?:Char(?:acter)?)?\s*\].*$/i;
 const reUnloadChar = /^\[\s*unload(?:Char(?:acter)?)?\s*\].*$/i;
 const reIsAttribute = /^(Body|Agility|Reaction|Strength|Charisma|Intuition|Logic|Willpower|Edge|Magic|Resonance|Depth)$/i
 const reIsAdditionalCharacterStat = /^()$/i
+const reGeneralRollFormat = /^\s*\[(\s*[\+\-]?\s*(?:\d+)d(?:\d+))+(\s*[\+\-]?\s*((?:\d+)d(?:\d+)|\d+))*\s*\].*$/i;
+const reXdY = /([\+\-]?)\s*(?:(\d+)d(\d+)|(\d+))/gi;
 const reRollFormat = /^\s*\[\s*(([A-z0-9: \+\-]+?)\s*(?:\((\d+)\))?\s*(!)?\s*(?:(v|a|T)\s*([0-9: \+\-]+?))?\s*(?:\((\d+)\))?\s*(!)?\s*(?:,\s*(\d+))?)\s*((?:\s*,\s*[A-z0-9]+\s*=\s*[0-9\-]+)*)\s*\].*$/
 const maxDiscordMessageLength = 2000;
 const discordCodeBlockWrapper = '```';
@@ -273,7 +275,12 @@ client.on('message', message => {
             doInitiativeRoll(message);
         }
 
-        // General roll
+        // Generalized XdY roll
+        else if (reGeneralRollFormat.test(message.content)) {
+            doXdY(message);   
+        }
+
+        // General shadowrun roll
         else if (reRollFormat.test(message.content)) {
             doGeneralRoll(message);
         }
@@ -544,6 +551,7 @@ function doDisplayGeneralHelp(message) {
         + '\t**[get: pastebinId]** load character from the give paste on pastebin.com, e.g. [get: LdJXHX5e], also available as [getChar: LdJXHX5e] and [getCharacter: LdJXHX5e]\n'
         + '\t**[check]** check if you have a character loaded, also available as [checkChar] and [checkCharacter]\n'
         + '\t**[unload]** unload a loaded character, also available as [unloadChar] and [unloadCharacter]\n'
+        + 'General dice rolls (not Shadowrun rolls) can be made by [XdY+M], e.g. [5d6+2], [2d6+4d8+5], [1d20+8]\n'
         + '\n'
         + 'Loaded characters will ' + (restrictedMode ? '**not** ' : '') + 'remain accessible if the bot restarts' + (restrictedMode ? ' as it is in restricted mode' : '') + '.';
     /*
@@ -660,6 +668,80 @@ function doDisplayMacroHelp(message) {
 #
 ####################################################################################
 */
+function doXdY(message) {
+    // Find the individual roll parts
+    let rollParts = message.content.match(reXdY);
+    
+    // Go through the roll parts and get their results
+    let rollResult = [];
+    let rollTotal = 0;
+    for (let ii=0;ii<rollParts.length;ii++) {
+        rollResult[ii] = rollXdY(rollParts[ii]);
+        rollTotal += rollResult[ii].total;
+    }
+
+    let outputString = "**" + rollTotal + "** (";
+
+    for (let ii=0;ii<rollResult.length;ii++) {
+        outputString += ii>0 ? " " : "";
+        outputString += ii>0 || rollResult[ii].sign == "-" ? rollResult[ii].sign + " " : "";
+        outputString += rollResult[ii].total;
+    }
+    outputString += " | ";
+
+    for (let ii=0;ii<rollResult.length;ii++) {
+        outputString += ii>0 ? "; " : "";
+        for (let jj=0;jj<rollResult[ii].dice.length;jj++) {
+            outputString += jj>0 ? "," : "";
+            outputString += rollResult[ii].dice[jj];
+        }
+    }
+    outputString += ")";
+
+    message.reply(outputString);
+}
+
+function rollXdY(rollString) {
+    let reStatic = /^\s*([\+\-])?\s*(\d+)\s*$/i;
+    let reNdM = /^\s*([\+\-]?)\s*(\d+)d(\d+)\s*$/i
+    let output = {};
+    if (reNdM.test(rollString)) {
+        let rollParts = rollString.match(reNdM);
+        let nDice = rollParts[2];
+        let dieSize = rollParts[3];
+        let sign = rollParts[1] ? rollParts[1] : "+";
+
+        output.sign = sign;
+        output.dice = [];
+        output.total = 0;
+        for (let ii=0;ii<nDice;ii++) {
+            output.dice[ii] = parseInt(getRandomInt(1,dieSize));
+            output.total += parseInt(output.dice[ii]);
+        }
+        if (sign=="-") {
+            output.total *= -1;
+        }
+    }
+
+    else if (reStatic.test(rollString)) {
+        let rollParts = rollString.match(reStatic);
+        let value = rollParts[2];
+        let sign = rollParts[1] ? rollParts[1] : "+";
+
+        output.sign = sign;
+        output.dice = [parseInt(value)];
+        output.total = parseInt(value);
+        if (sign=="-") {
+            output.total *= -1;
+        }
+    }
+
+    else {
+        // TODO: Throw error
+    }
+    return output;
+}
+
 function doGeneralRoll(message) {
     // Get the replacement definitions from the original message
     let repDefs = reRollFormat.exec(message)[10] ? stringCondenseLower(reRollFormat.exec(message)[10]) : '';
