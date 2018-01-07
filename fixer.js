@@ -53,7 +53,7 @@ const outputLevels = {'minimal':1,'regular':2,'verbose':3};
 const botSavePath = 'fixer.json';
 const commands = getChatCommandList();
 const helpTopics = getHelpTopicsList();
-const reqArgs = ['token', 'paste', 'user', 'password', 'devkey', 'root'];
+const reqArgs = ['token', 'user', 'password', 'devkey', 'root'];
 const optArgs = ['glitch'];
 var bot = {};
 var args = {};
@@ -1326,7 +1326,7 @@ function printCurrentGameSetting(message,settingName) {
     let gameSettingsAllocated = gameDataAllocated && ('setting' in bot.channel[message.channel.id].game[activeGame]);
     let currentSetting = getGameSetting(message,activeGame,settingName);
     let validSettingData = getGameSettingList(activeGame)[settingName];
-    let validSettingValues = Object.keys(validSettingData.value);
+    let validSettingValues = validSettingData ? Object.keys(validSettingData.value) : [];
 
     // Add fields for all settings
     if (validSettingValues.length > 0) {
