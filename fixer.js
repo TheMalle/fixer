@@ -1434,6 +1434,9 @@ function saveCharacterData(channelId,activeGame,userId,alias,charData) {
 ####################################################################################
 */
 function parseSr5Character(message, chummerJson, alias) {
+    // If 
+    if (!messageAssert(message,chummerJson,'the pastebin data seems to be missing. Could not load character.')) { return; };
+
     // Go through attributes, active skills, knowledge skills, skill groups and improvements
     var attributeJson = chummerJson.character.attributes[0].attribute;
     var improvementJson = chummerJson.character.improvements[0].improvement;
