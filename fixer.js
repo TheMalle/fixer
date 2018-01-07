@@ -1294,14 +1294,14 @@ function printTable(message,title,desc,data,columns) {
     let knownPermissions = {};
     for (var ii=0;ii<data.length;ii++) { // Loop over main data entries
         if (isUsedInGame(message,data[ii])) {
-            if ('permission' in data[ii]) {
+            if ((data[ii].permission) && ('permission' in data[ii])) {
                 if (!(data[ii].permission in knownPermissions)) {
                     knownPermissions[data[ii].permission] = message.channel.guild.members.get(message.author.id).hasPermission(data[ii].permission);
                 }
             }
 
             let acceptedPermission = true;
-            if ('permission' in data[ii]) { 
+            if ((data[ii].permission) && ('permission' in data[ii])) { 
                 acceptedPermission = knownPermissions[data[ii].permission];
             }
 
