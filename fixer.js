@@ -47,7 +47,7 @@ const discordCodeBlockWrapper = '```';
 # Fixer parameters
 ####################################################################################
 */
-const versionId = '0.6.0';
+const versionId = '0.6.1';
 const games = {'SR5e':'SR5e','DnD5e':'DnD5e'};
 const outputLevels = {'minimal':1,'regular':2,'verbose':3};
 const botSavePath = 'fixer.json';
@@ -384,7 +384,7 @@ function shadowrunBasicRoll(message,match,command) {
         // Replace the matched text with the macro text
         let macroAlias = matches[1];
         let macro = bot.channel[channelId].game[activeGame].user[userId].macro[macroAlias];
-        let inputObject = macro.defaultInputs;
+        let inputObject = Object.assign({},macro.defaultInputs);
         let inputString = matches[8];
 
         let regExCsv = new RegExp(/,?\s*([A-z]+)(?:\s*=\s*([^,]+))?/gi);
