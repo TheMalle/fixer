@@ -923,9 +923,9 @@ function sr5RollCodeParser(message,rollCode) {
     let nSkills = 0;
     let nAttributes = 0;
     while (matches) {   
-        if (matches[2].toLowerCase() in activeSkills) { nSkills += 1; } // count skills
-        else if (matches[2].toUpperCase() in attributes) { nAttributes += 1; } // count attributes
-        else if (matches[2].toLowerCase() in sr5attributeMap) { nAttributes += 1; }; // count attributes
+        if (matches[2] && matches[2].toLowerCase() in activeSkills) { nSkills += 1; } // count skills
+        else if (matches[2] && matches[2].toUpperCase() in attributes) { nAttributes += 1; } // count attributes
+        else if (matches[2] && matches[2].toLowerCase() in sr5attributeMap) { nAttributes += 1; }; // count attributes
         matches = regEx.exec(rollCode);
     }
     
@@ -935,7 +935,7 @@ function sr5RollCodeParser(message,rollCode) {
     while (matches) {   
         let sign = matches[1].replace(/ /g,'');
         // Handle skills
-        if (matches[2].toLowerCase() in activeSkills) {
+        if (matches[2] && matches[2].toLowerCase() in activeSkills) {
             let nDice = 
                 nSkills == 1 && nAttributes == 0
                 ? activeSkills[matches[2].toLowerCase()].totalDice
@@ -944,12 +944,12 @@ function sr5RollCodeParser(message,rollCode) {
         }
         
         // Handle attributes (short name)
-        else if (matches[2].toUpperCase() in attributes) {
+        else if (matches[2] && matches[2].toUpperCase() in attributes) {
             totalDice += (sign=='-' ? -1 : 1)*attributes[matches[2]].totalValue;
         }
 
         // Handle attributes (full name)
-        else if (matches[2].toLowerCase() in sr5attributeMap) {
+        else if (matches[2] && matches[2].toLowerCase() in sr5attributeMap) {
             totalDice += (sign=='-' ? -1 : 1)*attributes[sr5attributeMap[matches[2]]].totalValue;
         }
 
