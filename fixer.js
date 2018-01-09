@@ -133,31 +133,37 @@ client.on('message', message => {
             // Private message
             //TODO: Implement private messaging stuff
         } else {
-            // find all sections in brackets (not accounting for nesting)
-            let regExDelim = new RegExp(/\[([^\]]+)\]/gi);
-            let matches = regExDelim.exec(message.content);
-            // while a section is found
-            while (matches) {
-                let match = matches[1];
-                // go through the list of commands
-                for (var ii = 0; ii < commands.length; ii++) {
-                    // if it matches that command and the command is in use
-                    let regExCmd = new RegExp(commands[ii].pattern);
-                    if ( regExCmd.test(match) && isUsedInGame(message,commands[ii]) ) {
-                        // then, if you have the required access level
-                        if (!(commands[ii].permissions) || message.channel.guild.members.get(message.author.id).hasPermission(commands[ii].permission)) {
-                            // execute that command
-                            commands[ii].func(message,match,commands[ii]);
-                        } else {
-                            // otherwise warn the user that they do not have the permissions to use the command
-                            message.reply('you need the access rights ' + commands[ii].permission + ' to use the command [' + match + '].')
+            try {
+                // find all sections in brackets (not accounting for nesting)
+                let regExDelim = new RegExp(/\[([^\]]+)\]/gi);
+                let matches = regExDelim.exec(message.content);
+                // while a section is found
+                while (matches) {
+                    let match = matches[1];
+                    // go through the list of commands
+                    for (var ii = 0; ii < commands.length; ii++) {
+                        // if it matches that command and the command is in use
+                        let regExCmd = new RegExp(commands[ii].pattern);
+                        if ( regExCmd.test(match) && isUsedInGame(message,commands[ii]) ) {
+                            // then, if you have the required access level
+                            if (!(commands[ii].permissions) || message.channel.guild.members.get(message.author.id).hasPermission(commands[ii].permission)) {
+                                // execute that command
+                                commands[ii].func(message,match,commands[ii]);
+                            } else {
+                                // otherwise warn the user that they do not have the permissions to use the command
+                                message.reply('you need the access rights ' + commands[ii].permission + ' to use the command [' + match + '].')
+                            }
+                            // then go to the next section
+                            break;
                         }
-                        // then go to the next section
-                        break;
                     }
+                    // go to the next section
+                    matches = regExDelim.exec(message.content);
                 }
-                // go to the next section
-                matches = regExDelim.exec(message.content);
+            } catch (err) {
+                console.log('DETECTED ERROR in message: ' + message.content);
+                console.log(err);
+                message.reply(message,'I encountered an error parsing your message.')
             }
         }
     }
