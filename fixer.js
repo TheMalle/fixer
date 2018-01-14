@@ -179,6 +179,14 @@ client.on('message', message => { // TODO: check client.on('messageUpdate',oldMe
 });
 /*
 ####################################################################################
+# Handle promise rejections
+####################################################################################
+*/
+process.on('unhandledRejection', (reason, p) => {
+    logUnhandledRejection(reason,p);
+});
+/*
+####################################################################################
 # Login to discord
 ####################################################################################
 */
@@ -757,18 +765,19 @@ function logMessageParsingError(message,caughtError) {
         var userGameData = 'FAILED TO GET';
     }
 
-    let errorMsg = 
-    moment().format('YYYY-MM-DD hh:mm:ss [GMT]ZZ')
-    + '\n\t' + 'Nonce'  + '\t' + message.nonce
-    + '\n\t' + 'Error'  + '\t' + caughtError.message
-    + '\n\t' + 'String' + '\t' + message
-    + '\n\t' + 'Author' + '\t' + message.author.username + '#' + message.author.discriminator
-    + '\n\t' + 'Server' + '\t' + message.channel.guild.name
-    + '\n\t' + 'Channel'+ '\t' + message.channel.name
-    + '\n\t' + 'Game'   + '\t' + gameMode
-    + '\n\t' + 'Error'  + '\t' + caughtError.name
-    + '\n\t' + 'Stack'  + '\t' + caughtError.stack.replace(/\n\s*/g,'\n\t\t').replace(/^[^\n]*\n\s*/,'')
-    + '\n';
+    let timeString = moment().format('YYYY-MM-DD hh:mm:ss [GMT]ZZ');
+
+    let errorMsg = timeString
+        + '\n\t' + 'Nonce'  + '\t' + message.nonce
+        + '\n\t' + 'Error'  + '\t' + caughtError.message
+        + '\n\t' + 'String' + '\t' + message
+        + '\n\t' + 'Author' + '\t' + message.author.username + '#' + message.author.discriminator
+        + '\n\t' + 'Server' + '\t' + message.channel.guild.name
+        + '\n\t' + 'Channel'+ '\t' + message.channel.name
+        + '\n\t' + 'Game'   + '\t' + gameMode
+        + '\n\t' + 'Error'  + '\t' + caughtError.name
+        + '\n\t' + 'Stack'  + '\t' + caughtError.stack.replace(/\n\s*/g,'\n\t\t').replace(/^[^\n]*\n\s*/,'')
+        + '\n';
 
     let errorStruct = {
         nonce: message.nonce,
@@ -788,6 +797,22 @@ function logMessageParsingError(message,caughtError) {
     fs.appendFile(errorDataFolder + message.nonce + '.log', CircularJSON.stringify(errorStruct), (err) => {
         if (err) throw err;
         console.log('Appended error data to error data file');
+    });
+}
+function logUnhandledRejection(reason,p) {
+    console.log('Unhandled rejection at:',p,'reason:',reason);
+
+    let timeString = moment().format('YYYY-MM-DD hh:mm:ss [GMT]ZZ');
+
+    let errorMsg = timeString
+        + '\n\t' + 'Error'  + '\t' + 'unhandled rejection'
+        + '\n\t' + 'Error'  + '\t' + reason
+        + '\n\t' + 'Stack'  + '\t' + p
+        + '\n';
+
+    fs.appendFile(errorLogPath, errorMsg, (err) => {
+        if (err) throw err;
+        console.log('Appended error to error log file');
     });
 }
 /*
