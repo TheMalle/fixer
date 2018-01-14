@@ -13,11 +13,6 @@ Private mode
 Export channel/user data
     To allow migration of a channel to another channel
     Or to allow a user to move all of his stuff to another channel
-
-
-    fix issue with rolls when no character loaded
-    change macros so that they are not compacted before storage
-    error output should go to log file
 */
 
 /*
