@@ -13,7 +13,6 @@ Private mode
 Export channel/user data
     To allow migration of a channel to another channel
     Or to allow a user to move all of his stuff to another channel
-
 */
 
 /*
@@ -34,6 +33,8 @@ var parseString = require('xml2js').parseString;
 var fs = require('fs');
 var TextDecoder = require('text-encoding').TextDecoder; 
 var PastebinAPI = require('better-pastebin');
+const moment = require('moment');
+var CircularJSON = require('circular-json');
 /*
 ####################################################################################
 # Discord parameters
@@ -47,14 +48,16 @@ const discordCodeBlockWrapper = '```';
 # Fixer parameters
 ####################################################################################
 */
-const versionId = '0.6.1';
+const versionId = '0.6.2';
 const games = {'SR5e':'SR5e','DnD5e':'DnD5e'};
 const outputLevels = {'minimal':1,'regular':2,'verbose':3};
 const botSavePath = 'fixer.json';
+const errorLogPath = 'error.log';
+const errorDataFolder = './errorData/';
 const commands = getChatCommandList();
 const helpTopics = getHelpTopicsList();
 const reqArgs = ['token', 'user', 'password', 'devkey', 'root'];
-const optArgs = ['glitch'];
+const optArgs = [];
 var bot = {};
 var args = {};
 /*
@@ -106,7 +109,7 @@ PastebinAPI.setDevKey(args.devkey);
 # Initialize / load bot data structure
 ####################################################################################
 */
-setupBot();
+setupBot(args);
 /*
 ####################################################################################
 # Action when bot has established connection to Discord
@@ -126,14 +129,14 @@ client.on('ready', () => {
 # Prepare for message parsing
 ####################################################################################
 */
-client.on('message', message => {
+client.on('message', message => { // TODO: check client.on('messageUpdate',oldMessage,newMessage) as well?
     // If it's not a message from this bot
-    if (message.author.id != client.user.id) {
+    if (message.author.id != client.user.id && !message.author.bot) {
         if (!(message.guild)) {
             // Private message
             //TODO: Implement private messaging stuff
         } else {
-            try {
+            try { // TODO: Bot currently listens even if it is muted. Change?
                 // find all sections in brackets (not accounting for nesting)
                 let regExDelim = new RegExp(/\[([^\]]+)\]/gi);
                 let matches = regExDelim.exec(message.content);
@@ -161,9 +164,15 @@ client.on('message', message => {
                     matches = regExDelim.exec(message.content);
                 }
             } catch (err) {
-                console.log('DETECTED ERROR in message: ' + message.content);
+                // Output error to console window
+                console.log('DETECTED UNCAUGHT ERROR in message: ' + message.content);
                 console.log(err);
-                message.reply(message,'I encountered an error parsing your message.')
+
+                // Inform user of failure
+                message.reply('I encountered an error parsing your message. An error log has been generated.')
+
+                // Write to log file
+                logMessageParsingError(message,err);
             }
         }
     }
@@ -213,7 +222,7 @@ function createMacro(message,match,command) {
 
     bot.channel[channelId].game[activeGame].user[userId].macro[alias] = {
         defaultInputs: defaultInputs,
-        body: macroString.replace(/ /g,'')
+        body: macroString
     }
     saveBotData();
     message.reply('created/updated macro with alias "' + alias + '"');
@@ -732,6 +741,57 @@ function printCommandList(message) {
 */
 /*
 ####################################################################################
+# Error logging
+####################################################################################
+*/
+function logMessageParsingError(message,caughtError) {
+    try {
+        var gameMode = getGameMode(message);
+    } catch (err) {
+        var gameMode = 'FAILED TO GET';
+    }
+
+    try {
+        var userGameData = bot.channel[message.channel.id].game[gameMode].user[message.author.id];
+    } catch (err) {
+        var userGameData = 'FAILED TO GET';
+    }
+
+    let errorMsg = 
+    moment().format('YYYY-MM-DD hh:mm:ss [GMT]ZZ')
+    + '\n\t' + 'Nonce'  + '\t' + message.nonce
+    + '\n\t' + 'Error'  + '\t' + caughtError.message
+    + '\n\t' + 'String' + '\t' + message
+    + '\n\t' + 'Author' + '\t' + message.author.username + '#' + message.author.discriminator
+    + '\n\t' + 'Server' + '\t' + message.channel.guild.name
+    + '\n\t' + 'Channel'+ '\t' + message.channel.name
+    + '\n\t' + 'Game'   + '\t' + gameMode
+    + '\n\t' + 'Error'  + '\t' + caughtError.name
+    + '\n\t' + 'Stack'  + '\t' + caughtError.stack.replace(/\n\s*/g,'\n\t\t').replace(/^[^\n]*\n\s*/,'')
+    + '\n';
+
+    let errorStruct = {
+        nonce: message.nonce,
+        error: {message: caughtError.message, stack: caughtError.stack},
+        message: message,
+        botData: bot
+    }
+
+    fs.appendFile(errorLogPath, errorMsg, (err) => {
+        if (err) throw err;
+        console.log('Appended error to error log file');
+    });
+    
+    if (!fs.existsSync(errorDataFolder)) {
+        fs.mkdirSync(errorDataFolder);    
+    }
+    fs.appendFile(errorDataFolder + message.nonce + '.log', CircularJSON.stringify(errorStruct), (err) => {
+        if (err) throw err;
+        console.log('Appended error data to error data file');
+    });
+}
+/*
+####################################################################################
 # General utility functions
 ####################################################################################
 */
@@ -922,10 +982,10 @@ function sr5RollCodeParser(message,rollCode) {
     // First count identified skills and attributes
     let nSkills = 0;
     let nAttributes = 0;
-    while (matches) {   
-        if (matches[2] && matches[2].toLowerCase() in activeSkills) { nSkills += 1; } // count skills
-        else if (matches[2] && matches[2].toUpperCase() in attributes) { nAttributes += 1; } // count attributes
-        else if (matches[2] && matches[2].toLowerCase() in sr5attributeMap) { nAttributes += 1; }; // count attributes
+    while (matches) {
+        if (activeSkills && matches[2] && matches[2].toLowerCase() in activeSkills) { nSkills += 1; } // count skills
+        else if (attributes && matches[2] && matches[2].toUpperCase() in attributes) { nAttributes += 1; } // count attributes
+        else if (attributes && matches[2] && matches[2].toLowerCase() in sr5attributeMap) { nAttributes += 1; }; // count attributes
         matches = regEx.exec(rollCode);
     }
     
@@ -935,7 +995,7 @@ function sr5RollCodeParser(message,rollCode) {
     while (matches) {   
         let sign = matches[1].replace(/ /g,'');
         // Handle skills
-        if (matches[2] && matches[2].toLowerCase() in activeSkills) {
+        if (activeSkills && matches[2] && matches[2].toLowerCase() in activeSkills) {
             let nDice = 
                 nSkills == 1 && nAttributes == 0
                 ? activeSkills[matches[2].toLowerCase()].totalDice
@@ -944,12 +1004,12 @@ function sr5RollCodeParser(message,rollCode) {
         }
         
         // Handle attributes (short name)
-        else if (matches[2] && matches[2].toUpperCase() in attributes) {
+        else if (attributes && matches[2] && matches[2].toUpperCase() in attributes) {
             totalDice += (sign=='-' ? -1 : 1)*attributes[matches[2]].totalValue;
         }
 
         // Handle attributes (full name)
-        else if (matches[2] && matches[2].toLowerCase() in sr5attributeMap) {
+        else if (attributes && matches[2] && matches[2].toLowerCase() in sr5attributeMap) {
             totalDice += (sign=='-' ? -1 : 1)*attributes[sr5attributeMap[matches[2]]].totalValue;
         }
 
@@ -1412,7 +1472,7 @@ function printCurrentOutputSetting(message) {
 # Saving and loading information
 ####################################################################################
 */
-function setupBot() {
+function setupBot(args) {
     if (botDataExists()) {
         console.log('Found saved bot data during setup - loading it');
         loadBotData();
