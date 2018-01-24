@@ -724,6 +724,21 @@ function removeCharacterData(message,match,command) {
         }
     } 
 }
+function botBehaviour(message,match,command) {
+    let regEx = new RegExp(command.pattern);
+    let matches = regEx.exec(match);
+    let comment = matches[1];
+
+    if (comment && (comment.toLowerCase() in botBehaviourResponses)) {
+        let responses = botBehaviourResponses[comment.toLowerCase()];
+        let n = responses.length;
+        let i = getRandomInt(0,n-1);
+        message.reply(responses[i]);
+    } else {
+        message.reply('what do you mean? "' + comment + '" bot? I don\'t know what that means!');
+    }
+    
+}
 function dev(message,match,command) {
 }
 /*
@@ -1384,7 +1399,7 @@ function printTable(message,title,desc,data,columns) {
     embed.setDescription(desc);
     let knownPermissions = {};
     for (var ii=0;ii<data.length;ii++) { // Loop over main data entries
-        if (isUsedInGame(message,data[ii])) {
+        if (isUsedInGame(message,data[ii]) && !data[ii].hidden) {
             if ((data[ii].permission) && ('permission' in data[ii])) {
                 if (!(data[ii].permission in knownPermissions)) {
                     knownPermissions[data[ii].permission] = message.channel.guild.members.get(message.author.id).hasPermission(data[ii].permission);
@@ -1923,7 +1938,8 @@ function getHelpTopicsList() {
             desc: ['list all available commands'],
             game: [],
             func: function (message) {printCommandList(message)},
-            permission: ''
+            permission: '',
+            hidden: false
         }
     ];
 }
@@ -1937,7 +1953,18 @@ function getChatCommandList() {
             desc: ['Get help on the relevant topic. Omitt topic for general help including list of help topics.'],
             game: [],
             func: function (message, match, cmd) {displayHelp(message, match, cmd)},
-            permission: ''
+            permission: '',
+            hidden: false
+        },
+        { // Bot behaviour
+            pattern: /^\s*(good|bad)\s*bot\s*$/i,
+            subpattern: '',
+            example: ['[goodbot], [badbot]'],
+            desc: ['Tell the bot how it is behaving.'],
+            game: [],
+            func: function (message, match, cmd) {botBehaviour(message, match, cmd)},
+            permission: '',
+            hidden: true
         },
         { // Export bot
             pattern: /^\s*export bot\s*$/i,
@@ -1946,7 +1973,8 @@ function getChatCommandList() {
             desc: ['Export the entire data of the bot, so that it can be imported to another bot user.'],
             game: [],
             func: function (message, match, cmd) {exportBotData(message, match, cmd)},
-            permission: 'ADMINISTRATOR'
+            permission: 'ADMINISTRATOR',
+            hidden: false
         },
         { // Import bot
             pattern: /^\s*import bot *(.{8})\s*$/i,
@@ -1955,7 +1983,8 @@ function getChatCommandList() {
             desc: ['Import data for the bot, overwriting any existing data.'],
             game: [],
             func: function (message, match, cmd) {importBotData(message, match, cmd)},
-            permission: 'ADMINISTRATOR'
+            permission: 'ADMINISTRATOR',
+            hidden: false
         }, 
         { // Import character sheet
             pattern: /^\s*import *(?:\"([^\"]+)\")? *(.{8})\s*$/i,
@@ -1964,16 +1993,18 @@ function getChatCommandList() {
             desc: ['Import a save file from the given paste ID, assigning the character the given name.'],
             game: ['SR5e'],
             func: function (message, match, cmd) {importCharacterSaveFile(message, match, cmd)},
-            permission: ''
+            permission: '',
+            hidden: false
         }, 
         { // Set which character you use
             pattern: /^\s*use *\"([^\"]+)\"\s*$/i,
             subpattern: '',
             example: ['[use "<character>"]'],
             desc: ['Change to using the given character.'],
-            game: [],
+            game: ['SR5e'],
             func: function (message, match, cmd) {changeCharacter(message, match, cmd)},
-            permission: ''
+            permission: '',
+            hidden: false
         }, 
         { // List saved characters
             pattern: /^\s*characterlist\s*$/i,
@@ -1982,7 +2013,8 @@ function getChatCommandList() {
             desc: ['List all characters you currently have saved'],
             game: [],
             func: function (message, match, cmd) {displayCharacterList(message, match, cmd)},
-            permission: ''
+            permission: '',
+            hidden: false
         }, 
         { // Delete saved character
             pattern: /^\s*delete *(?:(all)|\"([^\"]+)\")\s*$/i,
@@ -1991,7 +2023,8 @@ function getChatCommandList() {
             desc: ['Delete your character with the given alias.'],
             game: ['SR5e'],
             func: function (message, match, cmd) {removeCharacterData(message, match, cmd)},
-            permission: ''
+            permission: '',
+            hidden: false
         }, 
         { // Create macro
             //                   (alias )(inputs                                                         )   (macro string  )
@@ -2005,7 +2038,8 @@ function getChatCommandList() {
                     + ' [summon,F=2,B=5]. Macro aliases and input names may only contain A-z.'],
             game: ['SR5e'],
             func: function (message, match, cmd) {createMacro(message, match, cmd)},
-            permission: ''
+            permission: '',
+            hidden: false
         }, 
         { // Check macros
             pattern: /^\s*macrolist *(all)?\s*$/i,
@@ -2014,7 +2048,8 @@ function getChatCommandList() {
             desc: ['List all macros you have for the current game, or for all games.'],
             game: ['SR5e'],
             func: function (message, match, cmd) {displayMacroList(message, match, cmd)},
-            permission: ''
+            permission: '',
+            hidden: false
         },
         { // Delete macros
             pattern: /^\s*delmacro *(?:(all)|\"([^\"]+)\")?\s*$/i,
@@ -2023,7 +2058,8 @@ function getChatCommandList() {
             desc: ['Delete a specific macro, or all of your macros.'],
             game: ['SR5e'],
             func: function (message, match, cmd) {deleteMacro(message, match, cmd)},
-            permission: ''
+            permission: '',
+            hidden: false
         },
         { // Set or check game system
             pattern: /^\s*setgame *(\S*)?\s*$/i,
@@ -2032,7 +2068,8 @@ function getChatCommandList() {
             desc: ['Set the channel\'s game to the selected game system. Use [setgame] to see current and available game systems.'],
             game: [],
             func: function (message, match, cmd) {setGameMode(message, match, cmd)},
-            permission: ''
+            permission: '',
+            hidden: false
         },
         { // Set or check game settings
             pattern: /^\s*gamesetting *(?:\s(\S*))? *(?:\s("[^\"]*"))? *$/i,
@@ -2041,7 +2078,8 @@ function getChatCommandList() {
             desc: ['Set the value of a setting for the current game. Omitt the value to check the current value. Also omitt the setting to check all settings.'],
             game: ['any'],
             func: function (message, match, cmd) {setGameSetting(message, match, cmd)},
-            permission: 'ADMINISTRATOR'
+            permission: 'ADMINISTRATOR',
+            hidden: false
         },
         { // Set or check output level
             pattern: /^\s*(?:(default)\s+)?output(?:\s+([^ ]+))?\s*$/i,
@@ -2052,7 +2090,8 @@ function getChatCommandList() {
                     + ' Use [output] to list current and available output levels'],
             game: [],
             func: function (message, match, cmd) {setOutputLevel(message, match, cmd)},
-            permission: 'ADMINISTRATOR'
+            permission: 'ADMINISTRATOR',
+            hidden: false
         },/*
         { // Shadowrun edge spend after roll //TODO: Implement this
             pattern: /^\s*\[\s*$/i, 
@@ -2063,7 +2102,8 @@ function getChatCommandList() {
                 'Reroll misses on your previous roll'],
             game: ['SR5e'],
             func: function (message, match, cmd) {generalRoll(message, match, cmd)}, // TODO: Change command
-            permission: ''
+            permission: '',
+            hidden: false
         },
         { // Shadowrun extended rolls //TODO: Implement this
             pattern: /^\s*\[\s*$/i, 
@@ -2072,7 +2112,8 @@ function getChatCommandList() {
             desc: ['Extend your previous roll'],
             game: ['SR5e'],
             func: function (message, match, cmd) {generalRoll(message, match, cmd)}, // TODO: Change command
-            permission: ''
+            permission: '',
+            hidden: false
         },
         { // Add character to initiative list //TODO: Implement this
             pattern: /^\s*\[\s*$/i,
@@ -2083,7 +2124,8 @@ function getChatCommandList() {
                 +'This initiative is automatically rolled each new combat turn.'],
             game: ['SR5e'],
             func: function (message, match, cmd) {generalRoll(message, match, cmd)}, // TODO: Change command
-            permission: ''
+            permission: '',
+            hidden: false
         },
         { // Temporarily modify character's initiative //TODO: Implement this
             pattern: /^\s*\[\s*$/i, 
@@ -2093,7 +2135,8 @@ function getChatCommandList() {
                 +'If you omitt the name, your active character name will be used, otherwise your user name.'],
             game: ['SR5e'],
             func: function (message, match, cmd) {generalRoll(message, match, cmd)}, // TODO: Change command
-            permission: ''
+            permission: '',
+            hidden: false
         },
         { // Reroll character's initiative (e.g. change interface mode) //TODO: Implement this
             pattern: /^\s*\[\s*$/i, 
@@ -2102,7 +2145,8 @@ function getChatCommandList() {
             desc: ['Reroll the initiative of your active character, or the character with your user name, using their initiative expression.'],
             game: ['SR5e'],
             func: function (message, match, cmd) {generalRoll(message, match, cmd)}, // TODO: Change command
-            permission: ''
+            permission: '',
+            hidden: false
         },
         { // Start/end combat or go to next character //TODO: Implement this
             pattern: /^\s*\[\s*$/i,
@@ -2114,7 +2158,8 @@ function getChatCommandList() {
                 +'characters from the initiative queue and resets their initiative expressions.'],
             game: ['SR5e'],
             func: function (message, match, cmd) {generalRoll(message, match, cmd)}, // TODO: Change command
-            permission: ''
+            permission: '',
+            hidden: false
         },
         { // List initiative //TODO: Implement this
             pattern: /^\s*\[\s*$/i,
@@ -2123,7 +2168,8 @@ function getChatCommandList() {
             desc: ['Show initiative information, such as current pass, current initiative values, etc.'],
             game: ['SR5e'],
             func: function (message, match, cmd) {generalRoll(message, match, cmd)}, // TODO: Change command
-            permission: ''
+            permission: '',
+            hidden: false
         },*/
         { // General dice roll
             pattern: /^\s*(\s*[\+\-]?\s*(\d+d\d+|\d+))*\s*([\+\-]?\s*\d+d\d+)\s*(\s*[\+\-]?\s*(\d+d\d+|\d+))*\s*$/i,
@@ -2133,7 +2179,8 @@ function getChatCommandList() {
             desc: ['Roll any combination of dice and static modifiers.'],
             game: [],
             func: function (message, match, cmd) {generalRoll(message, match, cmd)},
-            permission: ''
+            permission: '',
+            hidden: false
         },
         { // Shadowrun basic rolls
             //            (nDice                                                    )    (limit                                                                   )    (e)    (type   )    (mDice                                                    )    (limit                                                                   )    (e)    (extraparam             )     
@@ -2151,7 +2198,8 @@ function getChatCommandList() {
                 'Availability test. Same basic format as simple tests, except C2 is the (optional) cost.'],
             game: ['SR5e'],
             func: function (message, match, cmd) {shadowrunBasicRoll(message, match, cmd)}, // TODO: Change command
-            permission: ''
+            permission: '',
+            hidden: false
         }
     ];
 }
@@ -2286,4 +2334,17 @@ const sr5attributeMap = {
     'magic': 'MAG',
     'resonance': 'RES',
     'depth': 'DEP'
+}
+
+const botBehaviourResponses = {
+    good: [ ':blush:',
+            ':heart:',
+            'I\'m so happy to be of service',
+            'anything for you!'
+          ],
+    bad:  [ ':middle_finger:',
+            ':sob:',
+            ':smiling_imp: ',
+            'don\'t hit me! Please don\'t hit me!'
+          ]
 }
