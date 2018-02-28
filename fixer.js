@@ -49,7 +49,7 @@ const discordCodeBlockWrapper = '```';
 ####################################################################################
 */
 const versionId = '0.6.3';
-const games = {'SR5e':'SR5e','DnD5e':'DnD5e'};
+const games = {'SR5e':'SR5e','DnD5e':'DnD5e','kitd':'Karma in the Dark'};
 const outputLevels = {'minimal':1,'regular':2,'verbose':3};
 const botSavePath = 'fixer.json';
 const errorLogPath = 'error.log';
@@ -513,6 +513,20 @@ function shadowrunBasicRoll(message,match,command) {
     else {
         suggestReport(message,'your command "' + match + '" was recognized as a Shadowrun roll, but did not match the pattern of a specific roll type.');
     }
+}
+function karmaInTheDarkRoll(message,match,command) {
+    let parser = new Parser();
+    let regEx = new RegExp(command.pattern);
+    let regExSub = new RegExp(command.subpattern)
+    let matches = regEx.exec(match);
+
+    let channelId = message.channel.id;
+    let userId = message.author.id;
+
+    let nDice = parser.evaluate(matches[0]);
+    let roll = kitdRoll(nDice,matches[0]);
+
+    printKarmaInTheDarkRoll(message, roll);
 }
 function setGameMode(message,match,command) {
     let regEx = new RegExp(command.pattern);
@@ -996,6 +1010,38 @@ function sr5glitch(dice,nOnes,glitchSetting) {
 
     return glitchMargin; // TODO: Implement this; shall be the number of 1's away from a glitch, based on current glitch settings
 }
+function kitdRoll(dice,rollCode) {
+    // Limit to at least 0 dice
+    dice = Math.max(0,dice);
+
+    // if no dice, use 2 and pick lowest
+    let useLowest = dice == 0;
+    let diceActual = dice > 0 ? dice : 2; 
+    let result = useLowest ? 6 : 0;
+    let critical = false;
+
+    // Roll the dice
+    let rolls = [];
+    for (var ii=0;ii<diceActual;ii++) {
+        let roll = getRandomInt(1,6)
+        rolls.push(roll);
+        critical = critical || (!useLowest && result == 6 && roll == 6);
+        result = useLowest ? Math.min(result,roll) : Math.max(result,roll)
+    }
+
+    let resultType = critical ? 'Critical success' : 
+                    result == 6 ? 'Full success' : 
+                    result >= 3 ? 'Partial success' : 'Bad outcome';
+
+    return {
+        rating: dice,
+        roll: rolls,
+        result: result,
+        resultType: resultType,
+        rollCode: rollCode
+    }
+
+}
 /*
 ####################################################################################
 # Roll code parsers
@@ -1377,6 +1423,40 @@ function printSr5AvailabilityTest(message,rollA,rollB,cost) {
 }
 function printSr5ExtendedTest() {
     
+}
+function printKarmaInTheDarkRoll(message,roll) {
+    let outputLevel = getOutputLevel(message);
+    
+    let diceOutcomes = roll.roll.join(',');
+    let resultType = roll.resultType;
+    let resultExplanation = 'You probably don\'t succeed, and you suffer consequences.';
+    switch (resultType.toLowerCase())  {
+        case 'critical success': 
+            resultExplanation = 'You succeed with additional advantage!';
+            break;
+        case 'full success':
+            resultExplanation = 'You succeed without incident!';
+            break;
+        case 'partial success':
+            resultExplanation = 'You succeed, but not without consequences!';
+            break;
+        default:
+            break;
+    }
+    let isVerbose = outputLevel >= outputLevels.verbose;
+    let isRegular = outputLevel >= outputLevels.regular;
+
+    let title = roll.result + " - " + resultType + '!';
+    let description = joinOutputString(
+        !isRegular ? '' : 'Roll: ' + diceOutcomes, 
+        !isVerbose ? '' : resultExplanation
+    );
+
+    let embed = new Discord.RichEmbed();
+    embed.setTitle(title);
+    embed.setDescription(description);
+    embed.setColor(15746887);
+    message.reply({embed});
 }
 /*
 ####################################################################################
@@ -1950,7 +2030,7 @@ function getChatCommandList() {
             pattern: /^\s*help *([^\]]+)?\s*$/i,
             subpattern: '',
             example: ['[help], [help <topic>]'],
-            desc: ['Get help on the relevant topic. Omitt topic for general help including list of help topics.'],
+            desc: ['Get help on the relevant topic. Omit topic for general help including list of help topics.'],
             game: [],
             func: function (message, match, cmd) {displayHelp(message, match, cmd)},
             permission: '',
@@ -2062,7 +2142,7 @@ function getChatCommandList() {
             hidden: false
         },
         { // Set or check game system
-            pattern: /^\s*setgame *(\S*)?\s*$/i,
+            pattern: /^\s*set *game *(\S*)?\s*$/i,
             subpattern: '',
             example: ['[setgame], [setgame <game>]'],
             desc: ['Set the channel\'s game to the selected game system. Use [setgame] to see current and available game systems.'],
@@ -2198,6 +2278,21 @@ function getChatCommandList() {
                 'Availability test. Same basic format as simple tests, except C2 is the (optional) cost.'],
             game: ['SR5e'],
             func: function (message, match, cmd) {shadowrunBasicRoll(message, match, cmd)}, // TODO: Change command
+            permission: '',
+            hidden: false
+        },
+        { // Blades in the Dark / Karma in the Dark rolls
+            //            (nDice                                                    )    (limit                                                                   )    (e)    (type   )    (mDice                                                    )    (limit                                                                   )    (e)    (extraparam             )     
+            //pattern: /^\s*([\+\-]?\s*(?:\d+|[A-z_]+)(?:\s*[\+\-]\s*(?:\d+|[A-z_]+))*)?\s*(\(\s*(?:[\+\-]?\s*(?:\d+|[A-z_]+)(?:\s*[\+\-]\s*(?:\d+|[A-z_]+))*)?\s*\))?\s*(!)?\s*(v|T|a|e)?\s*([\+\-]?\s*(?:\d+|[A-z_]+)(?:\s*[\+\-]\s*(?:\d+|[A-z_]+))*)?\s*(\(\s*(?:[\+\-]?\s*(?:\d+|[A-z_]+)(?:\s*[\+\-]\s*(?:\d+|[A-z_]+))*)?\s*\))?\s*(!)?\s*((?:\s*,\s*[^,\s][^,]*)+)?\s*$/i, 
+              pattern: /^\s*([\+\-]?\s*(?:\d+)(?:\s*[\+\-]\s*\d+)*)\s*$/,
+            //              (nDice                                )    (limit                                             )    (e)    (type   )    (mDice                              )    (limit                                               )    (e)    (extraparam             )     
+            //pattern: /^\s*([\+\-\*]?\s*\d+(?:\s*[\+\-\*]\s*\d+)*)?\s*(\(\s*(?:[\+\-\*]?\s*\d+(?:\s*[\+\-]\s*\d+)*)?\s*\))?\s*(!)?\s*(v|T|a|e)?\s*([\+\-\*]?\s*\d+(?:\s*[\+\-]\s*\d+)*)?\s*(\(\s*(?:[\+\-\*]?\s*\d+(?:\s*[\+\-\*]\s*\d+)*)?\s*\))?\s*(!)?\s*((?:\s*,\s*[^,\s][^,]*)+)?\s*$/i, 
+            subpattern: '',
+            example: ['[1]',
+                    '[2+1]'],
+            desc: ['Roll a test using the given number of dice'],
+            game: ['kitd'],
+            func: function (message, match, cmd) {karmaInTheDarkRoll(message, match, cmd)},
             permission: '',
             hidden: false
         }
