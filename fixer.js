@@ -142,6 +142,7 @@ client.on('message', message => { // TODO: check client.on('messageUpdate',oldMe
                 let matches = regExDelim.exec(message.content);
                 // while a section is found
                 while (matches) {
+                    if (matches[1].length > 40) { message.reply("Awfully verbose there chief, mind being a bit more brief?"); matches = regExDelim.exec(message.content); continue;}
                     let match = matches[1];
                     // go through the list of commands
                     for (var ii = 0; ii < commands.length; ii++) {
