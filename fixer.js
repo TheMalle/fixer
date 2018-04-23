@@ -371,7 +371,7 @@ function generalRoll(message,match,command) {
     let elementRolls = [];
     let elementCode = [];
     let parser = new Parser();
-    if (match.length > 100) { message.reply("Awfully verbose there chief. Could you be a bit more brief?"); return; }
+    if (match.length > 30) { message.reply("Awfully verbose there chief. Could you be a bit more brief?"); return; }
     while (matches) {
         if (isNaN(matches[2])) {
             // main component is not just a number, so it is XdY
@@ -400,7 +400,7 @@ function shadowrunBasicRoll(message,match,command) {
     let regEx = new RegExp(command.pattern);
     let regExSub = new RegExp(command.subpattern)
     let matches = regEx.exec(match);
-    if (match.length > 100) { message.reply("Awfully verbose there chief. Could you be a bit more brief?"); return; }
+    if (match.length > 30) { message.reply("Awfully verbose there chief. Could you be a bit more brief?"); return; }
 
     let channelId = message.channel.id;
     let activeGame = getGameMode(message);
