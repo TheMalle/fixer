@@ -378,6 +378,7 @@ function generalRoll(message,match,command) {
         if (isNaN(matches[2])) {
             // main component is not just a number, so it is XdY
             if (matches[3].length > 3 || !isnumber(nDiceA)) { message.reply("Can't hold all those dice, chief"); return; }
+            if (matches[4].length > 5 || !isnumber(nDiceA)) { message.reply("How many sides on those dice again?"); return; }
             let result = XdY(matches[3],matches[4],matches[1]);
             elementValue.push(result.sum);
             elementRolls.push(result.rolls);
