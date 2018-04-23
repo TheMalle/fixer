@@ -373,9 +373,12 @@ function generalRoll(message,match,command) {
     let elementRolls = [];
     let elementCode = [];
     let parser = new Parser();
+    if (match.length > 100) { message.reply("Awfully verbose there chief. Could you be a bit more brief?"); return; }
     while (matches) {
         if (isNaN(matches[2])) {
             // main component is not just a number, so it is XdY
+            if (matches[3] < 0) { message.reply("You want me to roll how many dice?!"); return; }
+            if (matches[3] > 100 || !isnumber(nDiceA)) { message.reply("Can't hold all those dice, chief"); return; }
             let result = XdY(matches[3],matches[4],matches[1]);
             elementValue.push(result.sum);
             elementRolls.push(result.rolls);
