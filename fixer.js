@@ -1,3 +1,5 @@
+import { isNumber } from 'util';
+
 /*
 ####################################################################################
 # 
@@ -425,10 +427,14 @@ function shadowrunBasicRoll(message,match,command) {
     }
 
     let nDiceA = sr5RollCodeParser(message,matches[1]);
+    if (nDiceA < 0) { message.reply("You want me to roll how many dice?!"); return; }
+    if (nDiceA > 100 || !isnumber(nDiceA)) { message.reply("Can't hold all those dice, chief"); return; }
     let limitA = sr5RollCodeParser(message,matches[2] ? matches[2].trim('()') : matches[2]);
     let edgeUseA = matches[3] ? matches[3] == '!' : false;
     let rollType = matches[4] ? matches[4].toLowerCase() : '';
     let nDiceB = sr5RollCodeParser(message,matches[5]);
+    if (nDiceB < 0) { message.reply("You want me to roll how many dice?!"); return; }
+    if (nDiceB > 100 || !isnumber(nDiceA)) { message.reply("Can't hold all those dice, chief"); return; }
     let limitB = sr5RollCodeParser(message,matches[6] ? matches[6].trim('()') : matches[6]);
     let edgeUseB = matches[7] ? matches[7] == '!' : false;
     let extraParam = matches[8] ? matches[8].substr(1).split(',') : undefined;
@@ -752,6 +758,14 @@ function botBehaviour(message,match,command) {
         message.reply('what do you mean? "' + comment + '" bot? I don\'t know what that means!');
     }
     
+}
+function sr5Initiative(message,match,command) {
+    let regEx = new RegExp(command.pattern);
+    let matches = regEx.exec(match);
+    let initAction = matches[1];
+    let charName = matches[2];
+    let rollCode = matches[3];
+    message.reply("I believe that's an initiative command:\n**Action:** " + initAction + "\n**Character:** " + charName + "\n**Roll:** " + rollCode)
 }
 function dev(message,match,command) {
 }
@@ -1472,6 +1486,15 @@ function printHelpList(message) {
     let columns = ['example','desc'];
     printTable(message,title,desc,helpTopics,columns)
 }
+function printSR5InitiativeHelp(message) {
+    let title = 'SR5e initiative tracker';
+    let desc = 'Use the following commands to administer the initiative tracker.'
+            +'\nWhere applicable, if you omit a character name your active character is used and'
+            +'\n if you omit a dice code the character\'s default initiative is used.';
+    let columns = ['example','desc'];
+    let data = sr5initiativeHelp;
+    printTable(message,title,desc,data,columns)
+}
 function printTable(message,title,desc,data,columns) {
     let embed = new Discord.RichEmbed()
     embed.setColor(15746887);
@@ -2010,6 +2033,7 @@ function messageAssert(message, condition, str) {
 function gameSupportsCharacterSaving(game) {
     return game == games.SR5e;
 }
+
 function getHelpTopicsList() {
     return [
         { // Commands
@@ -2018,6 +2042,15 @@ function getHelpTopicsList() {
             desc: ['list all available commands'],
             game: [],
             func: function (message) {printCommandList(message)},
+            permission: '',
+            hidden: false
+        },
+        { // Commands
+            topic: 'initiative',
+            example: ['[help initiative]'],
+            desc: ['show help on how to use the SR5e initiative tracker'],
+            game: ['SR5e'],
+            func: function (message) {printSR5InitiativeHelp(message)},
             permission: '',
             hidden: false
         }
@@ -2103,6 +2136,17 @@ function getChatCommandList() {
             desc: ['Delete your character with the given alias.'],
             game: ['SR5e'],
             func: function (message, match, cmd) {removeCharacterData(message, match, cmd)},
+            permission: '',
+            hidden: false
+        }, 
+        { // SR5 Initiative 
+            //                   action type            "name"            dice code
+            pattern: /^\s*init\s*(set|add|temporary|permanent|roll|remove|clear)\s*(?:\"([^"]+)\")?\s*((\s*[\+\-]?\s*(\d+d\d+|\d+))*\s*([\+\-]?\s*\d+d\d+)\s*(\s*[\+\-]?\s*(\d+d\d+|\d+))*)\s*$/i,
+            subpattern: /([\+\-]?)\s*((\d+)d(\d+)|\d+)/gi,
+            example: ['[init <set|add|temporary|permanent> "<name>" XdY+C]','[init roll], [init next], [init remove "<name>"], [init clear]'],
+            desc: ['See [help initiative] for more details.','See [help initiative] for more details.'],
+            game: ['SR5e'],
+            func: function (message, match, cmd) {sr5Initiative(message, match, cmd)},
             permission: '',
             hidden: false
         }, 
@@ -2430,6 +2474,81 @@ const sr5attributeMap = {
     'resonance': 'RES',
     'depth': 'DEP'
 }
+
+const sr5initiativeHelp = [
+    { // set
+        example: ['[init set "<name>" XdY+C]'],
+        desc: ['Set the default initiative of the named character, but do not add it to the list of combatants.'
+              +' You may omit the character name if you have an active character.'],
+        game: ['SR5e'],
+        permission: '',
+        hidden: false
+    },
+    { // add
+        example: ['[init add "<name>" XdY+C]'],
+        desc: ['Add a combatant with the given name to the list of combatants at the given initiative'
+             +' You may omit the character name if you have an active character, and you may omit the dice code if the character has a default initiative set.'],
+        game: ['SR5e'],
+        permission: '',
+        hidden: false
+    },
+    { // temporary
+        example: ['[init temporary "<name>" XdY+C]'],
+        desc: ['Modify the initiative of the named character until the end of this combat.'
+             +' If the dice code starts with a + or -, it will be applied as a modifier to the current initiative.'
+             +' If not, it will replace the current initiative.'
+             +' You may omit the character name if you have an active character.'],
+        game: ['SR5e'],
+        permission: '',
+        hidden: false
+    },
+    { // permanent
+        example: ['[init permanent "<name>" XdY+C]'],
+        desc: ['Modify the initiative of the named character until the end of this combat.'
+             +' If the dice code starts with a + or -, it will be applied as a modifier to the current initiative.'
+             +' If not, it will replace the current initiative.'
+             +' You may omit the character name if you have an active character.'],
+        game: ['SR5e'],
+        permission: '',
+        hidden: false
+    },
+    { // roll
+        example: ['[init roll]'],
+        desc: ['Start a new combat turn by having all listed combatants roll initiative.'],
+        game: ['SR5e'],
+        permission: '',
+        hidden: false
+    },
+    { // show
+        example: ['[init show]'],
+        desc: ['Show the current list of combatants.'],
+        game: ['SR5e'],
+        permission: '',
+        hidden: false
+    },
+    { // next
+        example: ['[init next]'],
+        desc: ['Go to the next character.'],
+        game: ['SR5e'],
+        permission: '',
+        hidden: false
+    },
+    { // remove
+        example: ['[init remove "<name>"]'],
+        desc: ['Remove the named character from the list of combatants.'
+             +' You may omit the character name if you have an active character.'],
+        game: ['SR5e'],
+        permission: '',
+        hidden: false
+    },
+    { // clear
+        example: ['[init clear]'],
+        desc: ['Remove all characters from the list of combatants.'],
+        game: ['SR5e'],
+        permission: '',
+        hidden: false
+    }
+]
 
 const botBehaviourResponses = {
     good: [ ':blush:',
