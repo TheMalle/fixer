@@ -375,8 +375,8 @@ function generalRoll(message,match,command) {
     while (matches) {
         if (isNaN(matches[2])) {
             // main component is not just a number, so it is XdY
-            if (isUndefined(matches[3]) || isNaN(matches[3]) || matches[3].length > 3 ) { message.reply("Can't hold all those dice, chief"); return; }
-            if (isUndefined(matches[4]) || isNaN(matches[4]) || matches[4].length > 5 ) { message.reply("How many sides on those dice again?"); return; }
+            if (matches.length < 4 || isNaN(matches[3]) || matches[3].length > 3 ) { message.reply("Can't hold all those dice, chief"); return; }
+            if (matches.length < 5 || isNaN(matches[4]) || matches[4].length > 5 ) { message.reply("How many sides on those dice again?"); return; }
             let result = XdY(matches[3],matches[4],matches[1]);
             elementValue.push(result.sum);
             elementRolls.push(result.rolls);
@@ -430,13 +430,13 @@ function shadowrunBasicRoll(message,match,command) {
 
     let nDiceA = sr5RollCodeParser(message,matches[1]);
     if (nDiceA < 0) { message.reply("You want me to roll how many dice?!"); return; }
-    if (nDiceA > 100 || isNaN(nDiceA) || isUndefined(nDiceA)) { message.reply("Can't hold all those dice, chief"); return; }
+    if (nDiceA > 100 || isNaN(nDiceA)) { message.reply("Can't hold all those dice, chief"); return; }
     let limitA = sr5RollCodeParser(message,matches[2] ? matches[2].trim('()') : matches[2]);
     let edgeUseA = matches[3] ? matches[3] == '!' : false;
     let rollType = matches[4] ? matches[4].toLowerCase() : '';
     let nDiceB = sr5RollCodeParser(message,matches[5]);
     if (nDiceB < 0) { message.reply("You want me to roll how many dice?!"); return; }
-    if (nDiceB > 100 || isNaN(nDiceB) || isUndefined(nDiceB)) { message.reply("Can't hold all those dice, chief"); return; }
+    if (nDiceB > 100 || isNaN(nDiceB)) { message.reply("Can't hold all those dice, chief"); return; }
     let limitB = sr5RollCodeParser(message,matches[6] ? matches[6].trim('()') : matches[6]);
     let edgeUseB = matches[7] ? matches[7] == '!' : false;
     let extraParam = matches[8] ? matches[8].substr(1).split(',') : undefined;
