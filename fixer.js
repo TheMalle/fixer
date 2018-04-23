@@ -437,7 +437,7 @@ function shadowrunBasicRoll(message,match,command) {
     let rollType = matches[4] ? matches[4].toLowerCase() : '';
     let nDiceB = sr5RollCodeParser(message,matches[5]);
     if (nDiceB < 0) { message.reply("You want me to roll how many dice?!"); return; }
-    if (nDiceB > 100 || isNaN(nDiceB)) { message.reply("Can't hold all those dice, chief"); return; }
+    if (nDiceB > 100) { message.reply("Can't hold all those dice, chief"); return; }
     let limitB = sr5RollCodeParser(message,matches[6] ? matches[6].trim('()') : matches[6]);
     let edgeUseB = matches[7] ? matches[7] == '!' : false;
     let extraParam = matches[8] ? matches[8].substr(1).split(',') : undefined;
