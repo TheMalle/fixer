@@ -48,7 +48,7 @@ const discordCodeBlockWrapper = '```';
 # Fixer parameters
 ####################################################################################
 */
-const versionId = '0.6.3';
+const versionId = '0.6.4';
 const games = {'SR5e':'SR5e','DnD5e':'DnD5e','kitd':'Karma in the Dark'};
 const outputLevels = {'minimal':1,'regular':2,'verbose':3};
 const botSavePath = 'fixer.json';
