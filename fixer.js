@@ -793,10 +793,13 @@ function botBehaviour(message,match,command) {
 function sr5Initiative(message,match,command) {
     let regEx = new RegExp(command.pattern);
     let matches = regEx.exec(match);
+    if (!messageAssert(message,matches.length>1,"I cannot parse that initiative command.")) { return; };
+
     let initAction = matches[1];
     let charName = matches[2];
     let rollCode = matches[3];
-    message.reply("I believe that's an initiative command:\n**Action:** " + initAction + "\n**Character:** " + charName + "\n**Roll:** " + rollCode)
+    let appendInfo = matches[4]
+    message.reply(`I believe that's an initiative command:\n**Action:** ${initAction}\n**Name:** ${charName}\n**Roll:** ${rollCode}\n**Additionally:** ${appendInfo}`);
 }
 function dev(message,match,command) {
 }
@@ -2198,14 +2201,54 @@ function getChatCommandList(message) {
         }, 
         { // SR5 Initiative 
             //                   action type            "name"            dice code
-            pattern: /^\s*init\s*(set|add|temporary|permanent|roll|remove|clear)\s*(?:\"([^"]+)\")?\s*((\s*[\+\-]?\s*(\d+d\d+|\d+))*\s*([\+\-]?\s*\d+d\d+)\s*(\s*[\+\-]?\s*(\d+d\d+|\d+))*)\s*$/i,
+            pattern: /^\s*init\s+(add|change|remove|blitz|seize|surge|start|next|new turn|end|show|details)\s*(?:\"([^\"]+)\")?\s*((?:\s*[\+\-]?\s*(?:\d+d\d+|\d+))*\s*(?:[\+\-]?\s*\d+d\d+)\s*(?:\s*[\+\-]?\s*(?:\d+d\d+|\d+))*)?\s*((?:(?:surge|blitz|seize|surprised?)\s*)+)?\s*$/i,
             subpattern: /([\+\-]?)\s*((\d+)d(\d+)|\d+)/gi,
-            example: ['[init <set|add|temporary|permanent> "<name>" XdY+C]','[init roll], [init next], [init remove "<name>"], [init clear]'],
-            desc: ['See [help initiative] for more details.','See [help initiative] for more details.'],
+            example: [
+                 '[init add XdY+C], [init add "<name>" XdY+C]'
+                ,'[... surge], [... blitz], [... seize], [... surprised]'
+                ,'[init change XdY+C], [init change "<name>" XdY+C]'
+                ,'[init remove], [init remove "<name>"]'
+                ,'[init blitz], [init blitz "<name>"]'
+                ,'[init seize], [init seize "<name>"]'
+                ,'[init surge], [init surge "<name>"]'
+                ,'[init start]'
+                ,'[init next]'
+                ,'[init new turn]'
+                ,'[init end]'
+                ,'[init show]'
+                ,'[init details], [init details "<name>"]'
+            ],
+            desc: [
+                  'Add a character to the initiative list with the given initiative dice pool. If the character name is omitted, it uses your user name.'
+                , 'Append surge, blitz, seize, or surprised to the *[init add]* command if you are using adrenaline surge, spending edge to blitz or seize the initiative, or if you are surprised'
+                , 'Change the initiative of your character to the new value, immediately affecting any current initiative score. If the character name is omitted, it uses your user name.'
+                , 'Removes the character from the initiative tracker. If the character name is omitted, it uses your user name.'
+                , 'Blitz for the next combat turn. Set the initiative dice of the character to +5d6 for one combat turn. If the character name is omitted, it uses your user name.'
+                , 'Seize the initiative for the next combat turn. The character acts first in all initiative passes for one combat turn. If the character name is omitted, it uses your user name.'
+                , 'Adrenaline surge. The character acts first in the first initiative pass in the first combat turn. If the character name is omitted, it uses your user name.'
+                , 'Start combat. Initiative is rolled for all characters, and the initiative table is shown.'
+                , 'Go to next character in the initiative. If no character has initiative score left you will be told to go to the next combat turn.'
+                , 'Start a new combat turn. This rerolls the initiative for all characters.'
+                , 'End the combat. This will clear the initiative tracker and reset the '
+                , 'Show the initiative table.'
+                , 'List initiative statistics for all characters, or a specific character if the name is supplied.'
+            ],
             game: ['SR5e'],
             func: function (message, match, cmd) {sr5Initiative(message, match, cmd)},
             permission: '',
             hidden: false,
+            topic: ['initiative']
+        }, 
+        { // SR5 Initiative - catch failed attempts 
+            //                   action type            "name"            dice code
+            pattern: /^\s*init\s*.*$/i,
+            subpattern: '',
+            example: [],
+            desc: [],
+            game: ['SR5e'],
+            func: function (message, match, cmd) {sr5Initiative(message, match, cmd)},
+            permission: '',
+            hidden: true,
             topic: ['initiative']
         }, 
         { // Create macro
