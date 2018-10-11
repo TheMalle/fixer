@@ -54,8 +54,6 @@ const outputLevels = {'minimal':1,'regular':2,'verbose':3};
 const botSavePath = 'fixer.json';
 const errorLogPath = 'error.log';
 const errorDataFolder = './errorData/';
-const commands = getChatCommandList();
-const helpTopics = getHelpTopicsList();
 const reqArgs = ['token', 'user', 'password', 'devkey', 'root'];
 const optArgs = [];
 var bot = {};
@@ -145,12 +143,13 @@ client.on('message', message => { // TODO: check client.on('messageUpdate',oldMe
                     if (matches[1].length > 40) { message.reply("Awfully verbose there chief, mind being a bit more brief?"); matches = regExDelim.exec(message.content); continue;}
                     let match = matches[1];
                     // go through the list of commands
+                    let commands = getChatCommandList(message);
                     for (var ii = 0; ii < commands.length; ii++) {
                         // if it matches that command and the command is in use
                         let regExCmd = new RegExp(commands[ii].pattern);
                         if ( regExCmd.test(match) && isUsedInGame(message,commands[ii]) ) {
                             // then, if you have the required access level
-                            if (!(commands[ii].permissions) || message.channel.guild.members.get(message.author.id).hasPermission(commands[ii].permission)) {
+                            if (authorizedForCommand(message,commands[ii])) {
                                 // execute that command
                                 commands[ii].func(message,match,commands[ii]);
                             } else {
@@ -308,19 +307,48 @@ function displayHelp(message,match,command) {
     let matches = regEx.exec(match);
     let game = getGameMode(message);
 
+    // Check which topic to use - default to general
+    let topic = "general";
     if (matches.length > 1 && matches[1]) {
-        let topicFound = false;
-        for (var ii=0;ii<helpTopics.length;ii++) {
-            if (matches[1].toLowerCase() == helpTopics[ii].topic.toLowerCase()) {
-                helpTopics[ii].func(message);
-                topicFound = true;
-                break;
-            }
-        }
-        if (!messageAssert(message, topicFound, 'no help exists on the topic "' + matches[1] + '".')) { return };
-    } else {
-        printHelpList(message);
+        // topic supplied - use it
+        topic = matches[1];
     }
+    let topicLower = topic.toLowerCase();
+
+    // Get the topic title and description, if any
+    let helpTopics = getHelpTopicDescription(message);
+    if (!messageAssert(message, topicLower in helpTopics, `no help exists on the topic "${topic}".`)) { return };
+    let title = "";
+    let desc = "";
+    if (topicLower in helpTopics) {
+        let topicData = helpTopics[topicLower];
+        if ('title' in topicData) {
+            title = topicData.title();
+        }
+        if ('desc' in topicData) {
+            desc = topicData.desc();
+        }
+    }
+
+    // Get list of all allowed non-hidden commands available in the current game mode and matching the topic
+    let commands = getChatCommandList(message);
+    let commandsToPrint = [];
+    for (var ii=0;ii<commands.length;ii++) {
+        let allowed = authorizedForCommand(message, commands[ii]);
+        let hidden = commands[ii].hidden;
+        let forCurrentGame = isUsedInGame(message,commands[ii]);
+        let matchesTopic = arrayContains(commands[ii].topic,topic);
+        if (allowed && !hidden && forCurrentGame && matchesTopic) {
+            commandsToPrint.push(commands[ii]);
+        }
+    }
+
+    // Otherwise print the example and descriptions for all the commands, together with the topic title and description
+    if (commandsToPrint.length == 0) {
+        desc += `There are currently no commands for this category.`;
+    }
+    let columns = ['example','desc'];
+    printTable(message,title,desc,commandsToPrint,columns)
 }
 function exportBotData(message,match,command) {
     let str = JSON.stringify(bot);
@@ -784,6 +812,7 @@ function printCommandList(message) {
     let desc = 'The channel is ' + (game ? 'using the game system ' + game : 'not using a game system') + ', so the following commands are available';
 
     let columns = ['example','desc'];
+    let commands = getChatCommandList(message);
     printTable(message,title,desc,commands,columns)
 }
 /*
@@ -1553,7 +1582,7 @@ function printCurrentGameSetting(message,settingName) {
     
         embed.setColor(15746887);
         embed.setTitle('Valid values for __' + settingName + '__ ');
-        embed.setDescription('Note: current setting below is underlined. You can change to a given value by using [gamesetting ' + settingName + '"<value>"], replacing <value> with the appropriate value.');
+        embed.setDescription('Note: current setting below is underlined. You can change to a given value by using [gamesetting ' + settingName + ' "<value>"], replacing <value> with the appropriate value.');
         message.reply({embed});
     } else {
         message.reply('there are no settings for the ' + activeGame + ' game system.')
@@ -2011,6 +2040,10 @@ function removeAllMacros(channelId,userId) {
         if (needsSaving) { saveBotData() };
     }
 }
+
+function authorizedForCommand(message,command) {
+    return !(command.permissions) || message.channel.guild.members.get(message.author.id).hasPermission(command.permission)
+}
 /*
 ####################################################################################
 # Dev, debug, troubleshooting, etc.
@@ -2037,40 +2070,54 @@ function gameSupportsCharacterSaving(game) {
     return game == games.SR5e;
 }
 
-function getHelpTopicsList() {
-    return [
-        { // Commands
-            topic: 'commands',
-            example: ['[help commands]'],
-            desc: ['list all available commands'],
-            game: [],
-            func: function (message) {printCommandList(message)},
-            permission: '',
-            hidden: false
-        },
-        { // Commands
-            topic: 'initiative',
-            example: ['[help initiative]'],
-            desc: ['show help on how to use the SR5e initiative tracker'],
-            game: ['SR5e'],
-            func: function (message) {printSR5InitiativeHelp(message)},
-            permission: '',
-            hidden: false
+function getHelpTopicDescription(message) {
+    let game = getGameMode(message);
+    return helpTopics = 
+        {
+            general: {
+                title: () => `Fixer ${versionId}${bot.restrictedMode ? ` (restricted mode)` : ''}`,
+                desc: () => `This channel is ${game ? `using the game system ${game}` : 'not using a game system'}. For more help, use the following command to get help on a specific topic.\n`
+            },
+            rolls: {
+                title: () => `Roll commands${game ? ` for ${game}` : ''}`,
+                desc: () => `The following commands can be used to roll dice${game ? ` for the current game system` : ''}.\n`
+            },
+            bot: {
+                title: () => `Bot commands`,
+                desc: () => `The following commands can be used to affect how Fixer works.\n`
+            },
+            misc: {
+                title: () => `Miscellaneous commands`,
+                desc: () => `These are commands not readily sorted in any other topic.\n`
+            },
+            character: {
+                title: () => `Character commands`,
+                desc: () => `These are commands to load characters into Fixer to support integrated use of character statistics.\n`
+            },
+            initiative: {
+                title: () => `Initiative tracker`,
+                desc: () => `These are commands to handle initiative tracking for characters.\n`
+            },
+            macros: {
+                title: () => `Macro functionality`,
+                desc: () => `These are commands to create macros to support aliasing in roll commands.\n`
+            }
         }
-    ];
 }
 
-function getChatCommandList() {
+function getChatCommandList(message) {
+    let helpTopics = Object.keys(getHelpTopicDescription(message)).sort().join("\n");
     return [
         { // Help
             pattern: /^\s*help *([^\]]+)?\s*$/i,
             subpattern: '',
-            example: ['[help], [help <topic>]'],
-            desc: ['Get help on the relevant topic. Omit topic for general help including list of help topics.'],
+            example: ['[help <topic>]'],
+            desc: [`Get help on one of the following topics:\n${helpTopics}`],
             game: [],
             func: function (message, match, cmd) {displayHelp(message, match, cmd)},
             permission: '',
-            hidden: false
+            hidden: false,
+            topic: ['general']
         },
         { // Bot behaviour
             pattern: /^\s*(good|bad)\s*bot\s*$/i,
@@ -2080,7 +2127,8 @@ function getChatCommandList() {
             game: [],
             func: function (message, match, cmd) {botBehaviour(message, match, cmd)},
             permission: '',
-            hidden: true
+            hidden: true,
+            topic: ['misc']
         },
         { // Export bot
             pattern: /^\s*export bot\s*$/i,
@@ -2090,7 +2138,8 @@ function getChatCommandList() {
             game: [],
             func: function (message, match, cmd) {exportBotData(message, match, cmd)},
             permission: 'ADMINISTRATOR',
-            hidden: false
+            hidden: false,
+            topic: ['bot']
         },
         { // Import bot
             pattern: /^\s*import bot *(.{8})\s*$/i,
@@ -2100,7 +2149,8 @@ function getChatCommandList() {
             game: [],
             func: function (message, match, cmd) {importBotData(message, match, cmd)},
             permission: 'ADMINISTRATOR',
-            hidden: false
+            hidden: false,
+            topic: ['bot']
         }, 
         { // Import character sheet
             pattern: /^\s*import *(?:\"([^\"]+)\")? *(.{8})\s*$/i,
@@ -2110,7 +2160,8 @@ function getChatCommandList() {
             game: ['SR5e'],
             func: function (message, match, cmd) {importCharacterSaveFile(message, match, cmd)},
             permission: '',
-            hidden: false
+            hidden: false,
+            topic: ['character']
         }, 
         { // Set which character you use
             pattern: /^\s*use *\"([^\"]+)\"\s*$/i,
@@ -2120,7 +2171,8 @@ function getChatCommandList() {
             game: ['SR5e'],
             func: function (message, match, cmd) {changeCharacter(message, match, cmd)},
             permission: '',
-            hidden: false
+            hidden: false,
+            topic: ['character']
         }, 
         { // List saved characters
             pattern: /^\s*characterlist\s*$/i,
@@ -2130,7 +2182,8 @@ function getChatCommandList() {
             game: [],
             func: function (message, match, cmd) {displayCharacterList(message, match, cmd)},
             permission: '',
-            hidden: false
+            hidden: false,
+            topic: ['character']
         }, 
         { // Delete saved character
             pattern: /^\s*delete *(?:(all)|\"([^\"]+)\")\s*$/i,
@@ -2140,7 +2193,8 @@ function getChatCommandList() {
             game: ['SR5e'],
             func: function (message, match, cmd) {removeCharacterData(message, match, cmd)},
             permission: '',
-            hidden: false
+            hidden: false,
+            topic: ['character']
         }, 
         { // SR5 Initiative 
             //                   action type            "name"            dice code
@@ -2151,7 +2205,8 @@ function getChatCommandList() {
             game: ['SR5e'],
             func: function (message, match, cmd) {sr5Initiative(message, match, cmd)},
             permission: '',
-            hidden: false
+            hidden: false,
+            topic: ['initiative']
         }, 
         { // Create macro
             //                   (alias )(inputs                                                         )   (macro string  )
@@ -2166,7 +2221,8 @@ function getChatCommandList() {
             game: ['SR5e'],
             func: function (message, match, cmd) {createMacro(message, match, cmd)},
             permission: '',
-            hidden: false
+            hidden: false,
+            topic: ['macros']
         }, 
         { // Check macros
             pattern: /^\s*macrolist *(all)?\s*$/i,
@@ -2176,7 +2232,8 @@ function getChatCommandList() {
             game: ['SR5e'],
             func: function (message, match, cmd) {displayMacroList(message, match, cmd)},
             permission: '',
-            hidden: false
+            hidden: false,
+            topic: ['macros']
         },
         { // Delete macros
             pattern: /^\s*delmacro *(?:(all)|\"([^\"]+)\")?\s*$/i,
@@ -2186,7 +2243,8 @@ function getChatCommandList() {
             game: ['SR5e'],
             func: function (message, match, cmd) {deleteMacro(message, match, cmd)},
             permission: '',
-            hidden: false
+            hidden: false,
+            topic: ['macros']
         },
         { // Set or check game system
             pattern: /^\s*set *game *(\S*)?\s*$/i,
@@ -2196,7 +2254,8 @@ function getChatCommandList() {
             game: [],
             func: function (message, match, cmd) {setGameMode(message, match, cmd)},
             permission: '',
-            hidden: false
+            hidden: false,
+            topic: ['bot']
         },
         { // Set or check game settings
             pattern: /^\s*gamesetting *(?:\s(\S*))? *(?:\s("[^\"]*"))? *$/i,
@@ -2206,7 +2265,8 @@ function getChatCommandList() {
             game: ['any'],
             func: function (message, match, cmd) {setGameSetting(message, match, cmd)},
             permission: 'ADMINISTRATOR',
-            hidden: false
+            hidden: false,
+            topic: ['bot']
         },
         { // Set or check output level
             pattern: /^\s*(?:(default)\s+)?output(?:\s+([^ ]+))?\s*$/i,
@@ -2218,7 +2278,8 @@ function getChatCommandList() {
             game: [],
             func: function (message, match, cmd) {setOutputLevel(message, match, cmd)},
             permission: 'ADMINISTRATOR',
-            hidden: false
+            hidden: false,
+            topic: ['bot']
         },/*
         { // Shadowrun edge spend after roll //TODO: Implement this
             pattern: /^\s*\[\s*$/i, 
@@ -2307,7 +2368,8 @@ function getChatCommandList() {
             game: [],
             func: function (message, match, cmd) {generalRoll(message, match, cmd)},
             permission: '',
-            hidden: false
+            hidden: false,
+            topic: ['rolls']
         },
         { // Shadowrun basic rolls
             //            (nDice                                                    )    (limit                                                                   )    (e)    (type   )    (mDice                                                    )    (limit                                                                   )    (e)    (extraparam             )     
@@ -2326,7 +2388,8 @@ function getChatCommandList() {
             game: ['SR5e'],
             func: function (message, match, cmd) {shadowrunBasicRoll(message, match, cmd)}, // TODO: Change command
             permission: '',
-            hidden: false
+            hidden: false,
+            topic: ['rolls']
         },
         { // Blades in the Dark / Karma in the Dark rolls
             //            (nDice                                                    )    (limit                                                                   )    (e)    (type   )    (mDice                                                    )    (limit                                                                   )    (e)    (extraparam             )     
@@ -2341,7 +2404,8 @@ function getChatCommandList() {
             game: ['kitd'],
             func: function (message, match, cmd) {karmaInTheDarkRoll(message, match, cmd)},
             permission: '',
-            hidden: false
+            hidden: false,
+            topic: ['rolls']
         }
     ];
 }
