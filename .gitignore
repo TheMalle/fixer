@@ -1,0 +1,10 @@
+node_modules/
+fixer-commands.js
+fixer-functions.js
+fixer-helptopics.js
+fixer-old.js
+errorData/*.log
+error.log
+.vscode/
+*.log
+*.json
