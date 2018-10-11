@@ -48,18 +48,18 @@ const discordCodeBlockWrapper = '```';
 # Fixer parameters
 ####################################################################################
 */
-const versionId = '0.6.3';
+const versionId = '0.6.4';
 const games = {'SR5e':'SR5e','DnD5e':'DnD5e','kitd':'Karma in the Dark'};
 const outputLevels = {'minimal':1,'regular':2,'verbose':3};
 const botSavePath = 'fixer.json';
 const errorLogPath = 'error.log';
 const errorDataFolder = './errorData/';
-const commands = getChatCommandList();
-const helpTopics = getHelpTopicsList();
 const reqArgs = ['token', 'user', 'password', 'devkey', 'root'];
 const optArgs = [];
 var bot = {};
 var args = {};
+const internalFieldPrefix = '__';
+const activeCombatFieldName = `${internalFieldPrefix}activeCombat`;
 /*
 ####################################################################################
 # Parse and validate input arguments
@@ -82,7 +82,7 @@ process.argv.forEach(function (val, index, array) {
             args[matches[1]] = matches[2];
         }
     }
-    for (var ii = 0; ii < reqArgs.length; ii++) {
+    for (var ii = 0; ii < optArgs.length; ii++) {
         let reArg = new RegExp('\-\(' + optArgs[ii] + '\)\=([^\ ]+)');
         if (reArg.test(val)) {
             let matches = reArg.exec(val);
@@ -145,12 +145,15 @@ client.on('message', message => { // TODO: check client.on('messageUpdate',oldMe
                     if (matches[1].length > 40) { message.reply("Awfully verbose there chief, mind being a bit more brief?"); matches = regExDelim.exec(message.content); continue;}
                     let match = matches[1];
                     // go through the list of commands
+                    let commands = getChatCommandList(message);
                     for (var ii = 0; ii < commands.length; ii++) {
                         // if it matches that command and the command is in use
                         let regExCmd = new RegExp(commands[ii].pattern);
                         if ( regExCmd.test(match) && isUsedInGame(message,commands[ii]) ) {
                             // then, if you have the required access level
-                            if (!(commands[ii].permissions) || message.channel.guild.members.get(message.author.id).hasPermission(commands[ii].permission)) {
+                            if (authorizedForCommand(message,commands[ii])) {
+                                // ensure supporting data exists
+                                ensureBotData(message);
                                 // execute that command
                                 commands[ii].func(message,match,commands[ii]);
                             } else {
@@ -308,19 +311,48 @@ function displayHelp(message,match,command) {
     let matches = regEx.exec(match);
     let game = getGameMode(message);
 
+    // Check which topic to use - default to general
+    let topic = "general";
     if (matches.length > 1 && matches[1]) {
-        let topicFound = false;
-        for (var ii=0;ii<helpTopics.length;ii++) {
-            if (matches[1].toLowerCase() == helpTopics[ii].topic.toLowerCase()) {
-                helpTopics[ii].func(message);
-                topicFound = true;
-                break;
-            }
-        }
-        if (!messageAssert(message, topicFound, 'no help exists on the topic "' + matches[1] + '".')) { return };
-    } else {
-        printHelpList(message);
+        // topic supplied - use it
+        topic = matches[1];
     }
+    let topicLower = topic.toLowerCase();
+
+    // Get the topic title and description, if any
+    let helpTopics = getHelpTopicDescription(message);
+    if (!messageAssert(message, topicLower in helpTopics, `no help exists on the topic "${topic}".`)) { return };
+    let title = "";
+    let desc = "";
+    if (topicLower in helpTopics) {
+        let topicData = helpTopics[topicLower];
+        if ('title' in topicData) {
+            title = topicData.title();
+        }
+        if ('desc' in topicData) {
+            desc = topicData.desc();
+        }
+    }
+
+    // Get list of all allowed non-hidden commands available in the current game mode and matching the topic
+    let commands = getChatCommandList(message);
+    let commandsToPrint = [];
+    for (var ii=0;ii<commands.length;ii++) {
+        let allowed = authorizedForCommand(message, commands[ii]);
+        let hidden = commands[ii].hidden;
+        let forCurrentGame = isUsedInGame(message,commands[ii]);
+        let matchesTopic = arrayContains(commands[ii].topic,topic);
+        if (allowed && !hidden && forCurrentGame && matchesTopic) {
+            commandsToPrint.push(commands[ii]);
+        }
+    }
+
+    // Otherwise print the example and descriptions for all the commands, together with the topic title and description
+    if (commandsToPrint.length == 0) {
+        desc += `There are currently no commands for this category.`;
+    }
+    let columns = ['example','desc'];
+    printTable(message,title,desc,commandsToPrint,columns)
 }
 function exportBotData(message,match,command) {
     let str = JSON.stringify(bot);
@@ -763,13 +795,324 @@ function botBehaviour(message,match,command) {
     
 }
 function sr5Initiative(message,match,command) {
+    let channelId = message.channel.id;
+    let gameId = getGameMode(message);
     let regEx = new RegExp(command.pattern);
     let matches = regEx.exec(match);
+
+    // Catching failed matches, they have a single match for the entire string
+    if (!messageAssert(message,matches.length>1,"I cannot parse that initiative command.")) { return; };
+
+    // Get the data from a successful match
     let initAction = matches[1];
     let charName = matches[2];
     let rollCode = matches[3];
-    message.reply("I believe that's an initiative command:\n**Action:** " + initAction + "\n**Character:** " + charName + "\n**Roll:** " + rollCode)
+    let appendInfo = matches[4]
+    //message.reply(`I believe that's an initiative command:\n**Action:** ${initAction}\n**Name:** ${charName}\n**Roll:** ${rollCode}\n**Additionally:** ${appendInfo}`);
+
+    // ensure that the data structure for initiative is in place
+    ensureInitiative(channelId,gameId);
+
+    // Get message data and other metadata
+
+    let initData = bot.channel[channelId].game[gameId].init;
+    let charFieldName = !charName ? "" : charName.toFieldName();
+    let charExists = !charName ? false : initHasCharacter(channelId,gameId,charName);
+    let existingCharName = !charExists ? "" : initData.character[charFieldName].name
+    let combatIsActive = initHasCombat(channelId,gameId);
+    let initCharacters = Object.keys(initData.character).length;
+    let blitz = !appendInfo ? false : appendInfo.includes("blitz");
+    let seize = !appendInfo ? false : appendInfo.includes("seize");
+    let surprise = !appendInfo ? false : appendInfo.includes("surprise")
+    let surge = !appendInfo ? false : appendInfo.includes("surge")
+
+    // Perform initiative actions
+    switch (initAction.toLowerCase()) {
+        case 'add':
+            if (!messageAssert(message, !charExists, `there is already a character stored with the key for that name (key: ${charFieldName}, stored name: ${existingCharName})`)) { return; };
+            bot.channel[channelId].game[gameId].init.character[charFieldName] = {
+                name: charName,
+                rollCode: rollCode,
+                blitz: blitz,
+                seize: seize,
+                surprise: surprise,
+                surge: surge,
+                actedThisPass: false,
+                currentInit: null,
+                removedFromCombat: false,
+                edge: 0,
+                reaction: 0,
+                intuition: 0,
+                tiebreaker: null
+            };
+            break;
+
+        case 'change':
+            message.reply(`the '${initAction}' initiative action is not implemented yet.`);
+            break;
+
+        case 'remove':
+            if (!messageAssert(message, charExists, `no character found with the name "${charName}"`)) { return; };
+            delete bot.channel[channelId].game[gameId].init.character[charFieldName];
+            if (combatIsActive && charFieldName == bot.channel[channelId].game[gameId].init[activeCombatFieldName].currentCharacter) {
+                bot.channel[channelId].game[gameId].init[activeCombatFieldName].currentCharacter = null;
+                sr5NextInitiativeCharacter(message);
+            }
+            break;
+
+        case 'blitz':
+            message.reply(`the '${initAction}' initiative action is not implemented yet.`);
+            break;
+
+        case 'seize':
+            message.reply(`the '${initAction}' initiative action is not implemented yet.`);
+            break;
+
+        case 'surge':
+            message.reply(`the '${initAction}' initiative action is not implemented yet.`);
+            break;
+
+        case 'start':
+            if (!messageAssert(message, !combatIsActive, "combat is already started!")) { return; };
+            if (!messageAssert(message, initCharacters > 0, "there are no characters in the initiative tracker.")) { return; }
+            sr5InitiativeSetupCombat(message);
+            break;
+
+        case 'next':
+            if (!messageAssert(message, combatIsActive, "combat isn't running!")) { return; };
+            sr5InitiativeNextCharacter(message);
+            break;
+
+        case 'new turn':
+            if (!messageAssert(message, combatIsActive, "combat isn't running!")) { return; };
+            sr5InitiativeNewTurn(message);
+            break;
+
+        case 'end':
+            if (!messageAssert(message, combatIsActive, "combat isn't running!")) { return; };
+            delete bot.channel[channelId].game[gameId].init[activeCombatFieldName];
+            break;
+
+        case 'clear':
+            delete bot.channel[channelId].game[gameId].init[activeCombatFieldName];
+            bot.channel[channelId].game[gameId].init.character = {};
+            break;
+
+        case 'show':
+            if (!messageAssert(message, combatIsActive, "combat isn't running!")) { return; };
+            printSr5InitiativeTable(message);
+            break;
+
+        case 'details':
+            printSr5InitiativeDetails(message);
+            break;
+
+        default:
+            message.reply(`I don't know what to do with the '${initAction}' initiative action.`);
+            break;
+    }
 }
+function sr5InitiativeSetupCombat(message) {
+    let channelId = message.channel.id;
+    let gameId = getGameMode(message);
+    
+    // Initialize active combat struct
+    bot.channel[channelId].game[gameId].init[activeCombatFieldName] = {
+        combatTurn: 1,
+        initiativePass: 1,
+        currentCharacter: null
+    }
+
+    // Reset removed from combat
+    let characterKeys = Object.keys(bot.channel[channelId].game[gameId].init.character);
+    for (var ii=0;ii<characterKeys.length;ii++) {
+        charKey = characterKeys[ii];
+        bot.channel[channelId].game[gameId].init.character[charKey].removedFromCombat = false;
+    }
+
+    // Roll initiative
+    sr5RollInitiative(message);
+
+    // Show the initiative table
+    printSr5InitiativeTable(message);
+}
+function sr5InitiativeNewTurn(message) {
+    let channelId = message.channel.id;
+    let gameId = getGameMode(message);
+
+    // Reset initiative pass counter
+    bot.channel[channelId].game[gameId].init[activeCombatFieldName].initiativePass = 1;
+
+    // Increment combat turn counter
+    bot.channel[channelId].game[gameId].init[activeCombatFieldName].combatTurn += 1;
+
+    // Roll initiative for all characters
+    sr5RollInitiative(message);
+
+    // Print the current state
+    printSr5InitiativeTable(message);
+}
+function sr5InitiativeNewPass(message){
+    // Reset actedThisPass
+    let channelId = message.channel.id;
+    let gameId = getGameMode(message);
+    let characterKeys = Object.keys(bot.channel[channelId].game[gameId].init.character);
+    for (var ii=0;ii<characterKeys.length;ii++) {
+        charKey = characterKeys[ii];
+        bot.channel[channelId].game[gameId].init.character[charKey].actedThisPass = false;
+    }
+
+    // Increment initiative pass
+    bot.channel[channelId].game[gameId].init[activeCombatFieldName].initiativePass += 1;
+
+    // Get the next character to act this pass
+    sr5NextInitiativeCharacter(message);
+}
+function sr5InitiativeNextCharacter(message) {
+    let channelId = message.channel.id;
+    let gameId = getGameMode(message);
+
+    // Mark current character as having acted and reduce initiative
+    let currCharKey = bot.channel[channelId].game[gameId].init[activeCombatFieldName].currentCharacter;
+    bot.channel[channelId].game[gameId].init.character[currCharKey].actedThisPass = true;
+    bot.channel[channelId].game[gameId].init.character[currCharKey].currentInit -= 10;
+
+    // Get the next character to act this pass
+    sr5NextInitiativeCharacter(message);
+
+    // If no one is acting this pass, go to next initiative pass
+    if (!bot.channel[channelId].game[gameId].init[activeCombatFieldName].currentCharacter) {
+        sr5InitiativeNewPass(message);
+    }
+
+    // Print the current state
+    printSr5InitiativeTable(message);
+}
+function sr5RollInitiative(message) {
+    // Roll initiative for all characters
+    let channelId = message.channel.id;
+    let gameId = getGameMode(message);
+    let characterData = bot.channel[channelId].game[gameId].init.character;
+    let characterKeys = Object.keys(characterData);
+    for (var ii=0;ii<characterKeys.length;ii++) {
+        let charKey = characterKeys[ii];
+        let thisChar = characterData[charKey];
+        let charName = thisChar.name;
+        let rollCode = thisChar.rollCode;
+        let blitz = thisChar.blitz;
+        let surprise = thisChar.surprise;
+        
+        let rollData = parseD6Roll(rollCode);
+
+        if (blitz) { rollData.addDice = 5 };
+        if (surprise) { rollData.staticValue -= 10}
+
+        bot.channel[channelId].game[gameId].init.character[charKey].actedThisPass = false;
+        bot.channel[channelId].game[gameId].init.character[charKey].currentInit = XdY(rollData.addDice,6).sum - XdY(rollData.subDice,6).sum + rollData.staticValue;
+        bot.channel[channelId].game[gameId].init.character[charKey].tiebreaker = Math.random();
+    }
+
+    // Set whoever shall act first
+    sr5NextInitiativeCharacter(message);
+
+    // Reset flags for edge spending
+    for (var ii=0;ii<characterKeys.length;ii++) {
+        bot.channel[channelId].game[gameId].init.character[charKey].blitz = false;
+        bot.channel[channelId].game[gameId].init.character[charKey].seize = false;
+    }
+
+}
+function sr5NextInitiativeCharacter(message){
+    // Find the highest prioritized character who has not acted
+    let channelId = message.channel.id;
+    let gameId = getGameMode(message);
+    let combatData = bot.channel[channelId].game[gameId].init[activeCombatFieldName];
+    let characterData = bot.channel[channelId].game[gameId].init.character;
+    let characterKeys = Object.keys(characterData);
+    let nextChar = null;
+    let nextCharKey = null;
+    for (var ii=0;ii<characterKeys.length;ii++) {
+        let charKey = characterKeys[ii];
+        let thisChar = characterData[charKey];
+        if (thisChar.currentInit > 0 && sr5CompareInitiativeOrder(channelId,gameId,thisChar,nextChar) < 0) {
+            nextChar = thisChar;
+            nextCharKey = charKey;
+        }
+    }
+    if (nextCharKey && !nextChar.actedThisPass) {
+        bot.channel[channelId].game[gameId].init[activeCombatFieldName].currentCharacter = nextCharKey;
+    } else {
+        bot.channel[channelId].game[gameId].init[activeCombatFieldName].currentCharacter = null;
+    }
+}
+function sr5CompareInitiativeOrder(channelId,gameId,charA,charB,checkNextPass) {
+    // return -1 if charA goes first, 1 if charB goes first, 0 if neither is valid
+    if (!charA && !charB) { return 0; };
+    if (!charA) { return 1; };
+    if (!charB) { return -1; };
+
+    if (!checkNextPass) {
+        if (charA.actedThisPass && !charB.actedThisPass) { return 1; };
+        if (!charA.actedThisPass && charB.actedThisPass) { return -1; };
+    }
+
+    let combatData = bot.channel[channelId].game[gameId].init[activeCombatFieldName];
+    let combatTurn = combatData.combatTurn;
+    let initPass = combatData.initiativePass;
+
+    let hasPrioA = charA.seize || (charA.surge && combatTurn == 1 && initPass == 1 && !checkNextPass);
+    let hasPrioB = charB.seize || (charB.surge && combatTurn == 1 && initPass == 1 && !checkNextPass);
+    if (hasPrioA && !hasPrioB) { return -1; };
+    if (!hasPrioA && hasPrioB) { return 1; };
+
+    let initA = charA.currentInit + (checkNextPass && !charA.actedThisPass ? -10 : 0);
+    let initB = charB.currentInit + (checkNextPass && !charB.actedThisPass ? -10 : 0);
+
+    if (initA > initB) { return -1; };
+    if (initA < initB) { return 1; };
+    
+    if (charA.edge > charB.edge) { return -1; };
+    if (charA.edge < charB.edge) { return 1; };
+    
+    if (charA.reaction > charB.reaction) { return -1; };
+    if (charA.reaction < charB.reaction) { return 1; };
+    
+    if (charA.intuition > charB.intuition) { return -1; };
+    if (charA.intuition < charB.intuition) { return 1; };
+
+    if (charA.tiebreaker > charB.tiebreaker) { return 1; };
+    return -1;
+}
+
+function parseD6Roll(rollCode){
+    let parserPattern = /([\+\-]?)\s*((\d+)d(\d+)|\d+)/gi;
+    let regEx = new RegExp(parserPattern)
+    let matches = regEx.exec(rollCode);
+    let parser = new Parser();
+    let rollData = {addDice: 0, subDice: 0, staticValue: 0};
+    while (matches) {
+        if (isNaN(matches[2])) {
+            // main component is not just a number, so it is XdY
+            let nDice = matches[3];
+            let nSides = matches[4];
+            let sign = matches[1]=='-' ? -1 : 1;
+            
+            if (nSides == 6) {
+                if (sign > 0) {
+                    rollData.addDice += parser.evaluate(nDice);
+                } else {
+                    rollData.subDice += parser.evaluate(nDice);
+                }
+            }
+        } else {
+            // main component is a number, so a constant
+            rollData.staticValue = rollData.staticValue + parser.evaluate(matches[0]);
+        }
+        matches = regEx.exec(rollCode);
+    }
+    return rollData;
+}
+
 function dev(message,match,command) {
 }
 /*
@@ -784,6 +1127,7 @@ function printCommandList(message) {
     let desc = 'The channel is ' + (game ? 'using the game system ' + game : 'not using a game system') + ', so the following commands are available';
 
     let columns = ['example','desc'];
+    let commands = getChatCommandList(message);
     printTable(message,title,desc,commands,columns)
 }
 /*
@@ -897,6 +1241,9 @@ String.prototype.trimRight = function(charlist) {
 String.prototype.trim = function(charlist) {
     return this.trimLeft(charlist).trimRight(charlist);
 }
+String.prototype.toFieldName = function() {
+    return `_${this.replace(/[^A-z0-9]/,"")}`;
+}
 /*
 ####################################################################################
 # Get bot / channel / user status or info
@@ -961,6 +1308,7 @@ function getRandomInt(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 function XdY(dice,sides,sign) {
+    if (dice == 0) { return {sum: 0, rolls: []}; };
     sign = sign ? sign : "+";
     sign = sign == "+" ? 1 : -1;
     let rolls = [];
@@ -1477,27 +1825,9 @@ function printKarmaInTheDarkRoll(message,roll) {
 }
 /*
 ####################################################################################
-# Help and command list
+# Printing functions
 ####################################################################################
 */
-function printHelpList(message) {
-    let game = getGameMode(message);
-    let title = 'Fixer ' + versionId + (bot.restrictedMode ? ' (restricted mode)' : '')
-    let desc = 'This channel is ' + (game ? 'using the game system ' + game + '.': 'not using a game system.');
-    desc += ' For more help, use one of the following commands:\n';
-
-    let columns = ['example','desc'];
-    printTable(message,title,desc,helpTopics,columns)
-}
-function printSR5InitiativeHelp(message) {
-    let title = 'SR5e initiative tracker';
-    let desc = 'Use the following commands to administer the initiative tracker.'
-            +'\nWhere applicable, if you omit a character name your active character is used and'
-            +'\n if you omit a dice code the character\'s default initiative is used.';
-    let columns = ['example','desc'];
-    let data = sr5initiativeHelp;
-    printTable(message,title,desc,data,columns)
-}
 function printTable(message,title,desc,data,columns) {
     let embed = new Discord.RichEmbed()
     embed.setColor(15746887);
@@ -1553,7 +1883,7 @@ function printCurrentGameSetting(message,settingName) {
     
         embed.setColor(15746887);
         embed.setTitle('Valid values for __' + settingName + '__ ');
-        embed.setDescription('Note: current setting below is underlined. You can change to a given value by using [gamesetting ' + settingName + '"<value>"], replacing <value> with the appropriate value.');
+        embed.setDescription('Note: current setting below is underlined. You can change to a given value by using [gamesetting ' + settingName + ' "<value>"], replacing <value> with the appropriate value.');
         message.reply({embed});
     } else {
         message.reply('there are no settings for the ' + activeGame + ' game system.')
@@ -1612,6 +1942,106 @@ function printCurrentOutputSetting(message) {
     embed.addField('Output levels',listOfOutputs)
 
     message.reply({embed});
+}
+function printSr5InitiativeDetails(message) {
+    let channelId = message.channel.id;
+    let gameId = getGameMode(message);
+    if (gameHasInitiative(channelId,gameId)) {
+        let embed = new Discord.RichEmbed();
+        let characterData = bot.channel[channelId].game[gameId].init.character;
+        let charFieldNames = Object.keys(characterData);
+        if (charFieldNames.length > 0) {
+            for (var ii=0;ii<charFieldNames.length;ii++) {
+                let charName = characterData[charFieldNames[ii]].name;
+                let rollCode = characterData[charFieldNames[ii]].rollCode;
+                if (!charName.startsWith(internalFieldPrefix)) {
+                    embed.addField(charName,rollCode,true);
+                }
+            }
+        } else {
+            embed.setDescription('There are currently no characters in the initiative tracker.');
+        }
+
+        embed.setColor(15746887);
+        embed.setTitle('__**Characters in initiative tracker**__');
+        message.reply({embed});
+    }
+}
+function printSr5InitiativeTable(message) {
+    let channelId = message.channel.id;
+    let gameId = getGameMode(message);
+    let initOrder = [];
+    if (initHasCombat(channelId,gameId)) {
+        let embed = new Discord.RichEmbed();
+        let initData = bot.channel[channelId].game[gameId].init;
+        let charFieldNames = Object.keys(initData);
+
+        // If there is a current character, add them first
+        let currCharKey = initData[activeCombatFieldName].currentCharacter;
+        if (currCharKey) {
+            let charName = initData.character[currCharKey].name;
+            let init = initData.character[currCharKey].currentInit;
+            initOrder.push({name: charName, init: init, pass: 0 });
+        }
+
+        // Then, go through the characters, ignoring the current character and any who have already acted
+        let actThisTurn = [];
+        let charKeys = Object.keys(initData.character);
+        for (var ii=0;ii<charKeys.length;ii++) {
+            let charKey = charKeys[ii];
+            let thisChar = initData.character[charKey];
+            if (!thisChar.actedThisPass && !(charKey == currCharKey) && thisChar.currentInit > 0) {
+                actThisTurn.push(thisChar);
+            }
+        }
+        actThisTurn.sort(function(a,b){return sr5CompareInitiativeOrder(channelId,gameId,a,b)});
+        for (var ii=0;ii<actThisTurn.length;ii++) {
+            initOrder.push({name: actThisTurn[ii].name, init: actThisTurn[ii].currentInit, pass: 0});
+        }
+
+        // Then, go through all characters at successive -10 init for each pass through
+        // Note that characters that have acted are already at the initiative the should be
+        // for the next pass, so they should take one less penalty than others
+        let penalty = 0;
+        let actComingTurn = ['dummy'];
+        while (actComingTurn.length > 0) {
+            penalty += 10;
+            actComingTurn = [];
+            for (var ii=0;ii<charKeys.length;ii++) {
+                let charKey = charKeys[ii];
+                let thisChar = initData.character[charKey];
+                let thisCharNextInit = thisChar.currentInit - penalty + (thisChar.actedThisPass ? 10 : 0);
+                if (thisCharNextInit > 0) {
+                    actComingTurn.push(thisChar);
+                }
+            }
+            actComingTurn.sort(function(a,b){return sr5CompareInitiativeOrder(channelId,gameId,a,b,true)});
+            for (var ii=0;ii<actComingTurn.length;ii++) {
+                initOrder.push({name: actComingTurn[ii].name, init: actComingTurn[ii].currentInit-penalty+(actComingTurn[ii].actedThisPass ? 10 : 0), pass: penalty});
+            }
+        }
+
+        if (initOrder.length > 0) {
+            let desc = `${initOrder[ii].init}: ${initOrder[ii].name}\n`;
+            let passNum = bot.channel[channelId].game[gameId].init[activeCombatFieldName].initiativePass;
+            for (var ii=1;ii<initOrder.length;ii++) {
+                if (initOrder[ii].pass != initOrder[ii-1].pass) {
+                    embed.addField(`Pass ${passNum}`,desc)
+                    desc = '';
+                    passNum += 1;
+                }
+                desc += `${initOrder[ii].init}: ${initOrder[ii].name}\n`;
+            }
+            embed.addField(`Pass ${passNum}`,desc)
+            embed.setDescription('');
+        } else {
+            embed.setDescription('No characters have any remaining passes. Use [init new turn] to start a new combat turn.');
+        }
+
+        embed.setColor(15746887);
+        embed.setTitle('__**Initiative order**__');
+        message.reply({embed});
+    } 
 }
 /*
 ####################################################################################
@@ -1816,6 +2246,15 @@ function botDataExists() {
     return fs.existsSync(botSavePath);
 }
 
+function ensureBotData(message) {
+    let gameId = getGameMode(message);
+    let channelId = message.channel.id;
+    if (gameId != '') {
+        ensureGame(channelId, gameId);
+    } else {
+        ensureChannel(channelId);
+    }
+}
 function ensureChannel(channelId) {
     if (!(channelId in bot.channel)) {
         let init = {
@@ -1870,13 +2309,26 @@ function ensureUser(channelId,gameId,userId){
     }
     return true;
 }
+function ensureInitiative(channelId,gameId){
+    ensureGame(channelId,gameId);
+    if (!('init' in bot.channel[channelId].game[gameId])) {
+        let init = {
+            character: {}
+        };
+        bot.channel[channelId].game[gameId].init = init;
+        return false;
+    } else {
+        if (!('character' in bot.channel[channelId].game[gameId].init)) { bot.channel[channelId].game[gameId].init.character = {}};
+    }
+    return true;
+}
 
 function botHasChannel(channelId) {
     return (channelId in bot.channel)
 }
 function channelHasGame(channelId,gameId) {
     if (botHasChannel(channelId)) {
-        return (gameId in bot.channel[channelId].game)
+        return (gameId in bot.channel[channelId].game);
     } else {
         return false;
     }
@@ -1888,6 +2340,27 @@ function gameHasUser(channelId,gameId,userId) {
         return false;
     }
 }
+function gameHasInitiative(channelId,gameId) {
+    if (channelHasGame(channelId,gameId)) {
+        return ('init' in bot.channel[channelId].game[gameId])
+    } else {
+        return false;
+    }
+}
+function initHasCharacter(channelId,gameId,charName) {
+    if (gameHasInitiative(channelId,gameId)) {
+        return (charName.toFieldName() in bot.channel[channelId].game[gameId].init.character);
+    }
+    return false;
+}
+function initHasCombat(channelId,gameId){
+    if (gameHasInitiative(channelId,gameId)) {
+        return (activeCombatFieldName in bot.channel[channelId].game[gameId].init);
+    } else {
+        return false;
+    }
+}
+
 function userHasCharacter(channelId,gameId,userId,charId) {
     if (gameHasUser(channelId,gameId,userId)) {
         return (charId in bot.channel[channelId].game[gameId].user[userId].character)
@@ -2011,6 +2484,10 @@ function removeAllMacros(channelId,userId) {
         if (needsSaving) { saveBotData() };
     }
 }
+
+function authorizedForCommand(message,command) {
+    return !(command.permissions) || message.channel.guild.members.get(message.author.id).hasPermission(command.permission)
+}
 /*
 ####################################################################################
 # Dev, debug, troubleshooting, etc.
@@ -2037,40 +2514,54 @@ function gameSupportsCharacterSaving(game) {
     return game == games.SR5e;
 }
 
-function getHelpTopicsList() {
-    return [
-        { // Commands
-            topic: 'commands',
-            example: ['[help commands]'],
-            desc: ['list all available commands'],
-            game: [],
-            func: function (message) {printCommandList(message)},
-            permission: '',
-            hidden: false
-        },
-        { // Commands
-            topic: 'initiative',
-            example: ['[help initiative]'],
-            desc: ['show help on how to use the SR5e initiative tracker'],
-            game: ['SR5e'],
-            func: function (message) {printSR5InitiativeHelp(message)},
-            permission: '',
-            hidden: false
+function getHelpTopicDescription(message) {
+    let game = getGameMode(message);
+    return helpTopics = 
+        {
+            general: {
+                title: () => `Fixer ${versionId}${bot.restrictedMode ? ` (restricted mode)` : ''}`,
+                desc: () => `This channel is ${game ? `using the game system ${game}` : 'not using a game system'}. For more help, use the following command to get help on a specific topic.\n`
+            },
+            rolls: {
+                title: () => `Roll commands${game ? ` for ${game}` : ''}`,
+                desc: () => `The following commands can be used to roll dice${game ? ` for the current game system` : ''}.\n`
+            },
+            bot: {
+                title: () => `Bot commands`,
+                desc: () => `The following commands can be used to affect how Fixer works.\n`
+            },
+            misc: {
+                title: () => `Miscellaneous commands`,
+                desc: () => `These are commands not readily sorted in any other topic.\n`
+            },
+            character: {
+                title: () => `Character commands`,
+                desc: () => `These are commands to load characters into Fixer to support integrated use of character statistics.\n`
+            },
+            initiative: {
+                title: () => `Initiative tracker`,
+                desc: () => `These are commands to handle initiative tracking for characters.\n`
+            },
+            macros: {
+                title: () => `Macro functionality`,
+                desc: () => `These are commands to create macros to support aliasing in roll commands.\n`
+            }
         }
-    ];
 }
 
-function getChatCommandList() {
+function getChatCommandList(message) {
+    let helpTopics = Object.keys(getHelpTopicDescription(message)).sort().join("\n");
     return [
         { // Help
             pattern: /^\s*help *([^\]]+)?\s*$/i,
             subpattern: '',
-            example: ['[help], [help <topic>]'],
-            desc: ['Get help on the relevant topic. Omit topic for general help including list of help topics.'],
+            example: ['[help <topic>]'],
+            desc: [`Get help on one of the following topics:\n${helpTopics}`],
             game: [],
             func: function (message, match, cmd) {displayHelp(message, match, cmd)},
             permission: '',
-            hidden: false
+            hidden: false,
+            topic: ['general']
         },
         { // Bot behaviour
             pattern: /^\s*(good|bad)\s*bot\s*$/i,
@@ -2080,7 +2571,8 @@ function getChatCommandList() {
             game: [],
             func: function (message, match, cmd) {botBehaviour(message, match, cmd)},
             permission: '',
-            hidden: true
+            hidden: true,
+            topic: ['misc']
         },
         { // Export bot
             pattern: /^\s*export bot\s*$/i,
@@ -2090,7 +2582,8 @@ function getChatCommandList() {
             game: [],
             func: function (message, match, cmd) {exportBotData(message, match, cmd)},
             permission: 'ADMINISTRATOR',
-            hidden: false
+            hidden: false,
+            topic: ['bot']
         },
         { // Import bot
             pattern: /^\s*import bot *(.{8})\s*$/i,
@@ -2100,7 +2593,8 @@ function getChatCommandList() {
             game: [],
             func: function (message, match, cmd) {importBotData(message, match, cmd)},
             permission: 'ADMINISTRATOR',
-            hidden: false
+            hidden: false,
+            topic: ['bot']
         }, 
         { // Import character sheet
             pattern: /^\s*import *(?:\"([^\"]+)\")? *(.{8})\s*$/i,
@@ -2110,7 +2604,8 @@ function getChatCommandList() {
             game: ['SR5e'],
             func: function (message, match, cmd) {importCharacterSaveFile(message, match, cmd)},
             permission: '',
-            hidden: false
+            hidden: false,
+            topic: ['character']
         }, 
         { // Set which character you use
             pattern: /^\s*use *\"([^\"]+)\"\s*$/i,
@@ -2120,7 +2615,8 @@ function getChatCommandList() {
             game: ['SR5e'],
             func: function (message, match, cmd) {changeCharacter(message, match, cmd)},
             permission: '',
-            hidden: false
+            hidden: false,
+            topic: ['character']
         }, 
         { // List saved characters
             pattern: /^\s*characterlist\s*$/i,
@@ -2130,7 +2626,8 @@ function getChatCommandList() {
             game: [],
             func: function (message, match, cmd) {displayCharacterList(message, match, cmd)},
             permission: '',
-            hidden: false
+            hidden: false,
+            topic: ['character']
         }, 
         { // Delete saved character
             pattern: /^\s*delete *(?:(all)|\"([^\"]+)\")\s*$/i,
@@ -2140,18 +2637,62 @@ function getChatCommandList() {
             game: ['SR5e'],
             func: function (message, match, cmd) {removeCharacterData(message, match, cmd)},
             permission: '',
-            hidden: false
+            hidden: false,
+            topic: ['character']
         }, 
         { // SR5 Initiative 
             //                   action type            "name"            dice code
-            pattern: /^\s*init\s*(set|add|temporary|permanent|roll|remove|clear)\s*(?:\"([^"]+)\")?\s*((\s*[\+\-]?\s*(\d+d\d+|\d+))*\s*([\+\-]?\s*\d+d\d+)\s*(\s*[\+\-]?\s*(\d+d\d+|\d+))*)\s*$/i,
+            pattern: /^\s*init\s+(add|change|remove|blitz|seize|surge|start|next|new turn|end|clear|show|details)\s*(?:\"([^\"]+)\")?\s*((?:\s*[\+\-]?\s*(?:\d+d\d+|\d+))*\s*(?:[\+\-]?\s*\d+d\d+)\s*(?:\s*[\+\-]?\s*(?:\d+d\d+|\d+))*)?\s*((?:(?:surge|blitz|seize|surprised?)\s*)+)?\s*$/i,
             subpattern: /([\+\-]?)\s*((\d+)d(\d+)|\d+)/gi,
-            example: ['[init <set|add|temporary|permanent> "<name>" XdY+C]','[init roll], [init next], [init remove "<name>"], [init clear]'],
-            desc: ['See [help initiative] for more details.','See [help initiative] for more details.'],
+            example: [
+                 '[init add XdY+C], [init add "<name>" XdY+C]'
+                ,'[... surge], [... blitz], [... seize], [... surprised]'
+                ,'[init change XdY+C], [init change "<name>" XdY+C]'
+                ,'[init remove], [init remove "<name>"]'
+                ,'[init blitz], [init blitz "<name>"]'
+                ,'[init seize], [init seize "<name>"]'
+                ,'[init surge], [init surge "<name>"]'
+                ,'[init start]'
+                ,'[init next]'
+                ,'[init new turn]'
+                ,'[init end]'
+                ,'[init clear]'
+                ,'[init show]'
+                ,'[init details], [init details "<name>"]'
+            ],
+            desc: [
+                  'Add a character to the initiative list with the given initiative dice pool. If the character name is omitted, it uses your user name.'
+                , 'Append surge, blitz, seize, or surprised to the *[init add]* command if you are using adrenaline surge, spending edge to blitz or seize the initiative, or if you are surprised'
+                , 'Change the initiative of your character to the new value, immediately affecting any current initiative score. If the character name is omitted, it uses your user name.'
+                , 'Removes the character from the initiative tracker. If the character name is omitted, it uses your user name.'
+                , 'Blitz for the next combat turn. Set the initiative dice of the character to +5d6 for one combat turn. If the character name is omitted, it uses your user name.'
+                , 'Seize the initiative for the next combat turn. The character acts first in all initiative passes for one combat turn. If the character name is omitted, it uses your user name.'
+                , 'Adrenaline surge. The character acts first in the first initiative pass in the first combat turn. If the character name is omitted, it uses your user name.'
+                , 'Start combat. Initiative is rolled for all characters, and the initiative table is shown.'
+                , 'Go to next character in the initiative. If no character has initiative score left you will be told to go to the next combat turn.'
+                , 'Start a new combat turn. This rerolls the initiative for all characters.'
+                , 'End the combat. This will prevent display of initiative order until a combat is started again.'
+                , 'Clear the initiative tracker, removing all characters.'
+                , 'Show the initiative table.'
+                , 'List initiative statistics for all characters, or a specific character if the name is supplied.'
+            ],
             game: ['SR5e'],
             func: function (message, match, cmd) {sr5Initiative(message, match, cmd)},
             permission: '',
-            hidden: false
+            hidden: false,
+            topic: ['initiative']
+        }, 
+        { // SR5 Initiative - catch failed attempts 
+            //                   action type            "name"            dice code
+            pattern: /^\s*init\s*.*$/i,
+            subpattern: '',
+            example: [],
+            desc: [],
+            game: ['SR5e'],
+            func: function (message, match, cmd) {sr5Initiative(message, match, cmd)},
+            permission: '',
+            hidden: true,
+            topic: ['initiative']
         }, 
         { // Create macro
             //                   (alias )(inputs                                                         )   (macro string  )
@@ -2166,7 +2707,8 @@ function getChatCommandList() {
             game: ['SR5e'],
             func: function (message, match, cmd) {createMacro(message, match, cmd)},
             permission: '',
-            hidden: false
+            hidden: false,
+            topic: ['macros']
         }, 
         { // Check macros
             pattern: /^\s*macrolist *(all)?\s*$/i,
@@ -2176,7 +2718,8 @@ function getChatCommandList() {
             game: ['SR5e'],
             func: function (message, match, cmd) {displayMacroList(message, match, cmd)},
             permission: '',
-            hidden: false
+            hidden: false,
+            topic: ['macros']
         },
         { // Delete macros
             pattern: /^\s*delmacro *(?:(all)|\"([^\"]+)\")?\s*$/i,
@@ -2186,7 +2729,8 @@ function getChatCommandList() {
             game: ['SR5e'],
             func: function (message, match, cmd) {deleteMacro(message, match, cmd)},
             permission: '',
-            hidden: false
+            hidden: false,
+            topic: ['macros']
         },
         { // Set or check game system
             pattern: /^\s*set *game *(\S*)?\s*$/i,
@@ -2196,7 +2740,8 @@ function getChatCommandList() {
             game: [],
             func: function (message, match, cmd) {setGameMode(message, match, cmd)},
             permission: '',
-            hidden: false
+            hidden: false,
+            topic: ['bot']
         },
         { // Set or check game settings
             pattern: /^\s*gamesetting *(?:\s(\S*))? *(?:\s("[^\"]*"))? *$/i,
@@ -2206,7 +2751,8 @@ function getChatCommandList() {
             game: ['any'],
             func: function (message, match, cmd) {setGameSetting(message, match, cmd)},
             permission: 'ADMINISTRATOR',
-            hidden: false
+            hidden: false,
+            topic: ['bot']
         },
         { // Set or check output level
             pattern: /^\s*(?:(default)\s+)?output(?:\s+([^ ]+))?\s*$/i,
@@ -2218,7 +2764,8 @@ function getChatCommandList() {
             game: [],
             func: function (message, match, cmd) {setOutputLevel(message, match, cmd)},
             permission: 'ADMINISTRATOR',
-            hidden: false
+            hidden: false,
+            topic: ['bot']
         },/*
         { // Shadowrun edge spend after roll //TODO: Implement this
             pattern: /^\s*\[\s*$/i, 
@@ -2301,13 +2848,14 @@ function getChatCommandList() {
         { // General dice roll
             pattern: /^\s*(\s*[\+\-]?\s*(\d+d\d+|\d+))*\s*([\+\-]?\s*\d+d\d+)\s*(\s*[\+\-]?\s*(\d+d\d+|\d+))*\s*$/i,
             //pattern: /^\s*(?:([\+\-]?)\s*(\d+d\d+|\d+))(?:\s*([\+\-])\s*(\d+d\d+|\d+))*\s*$/i,
-            subpattern: /([\+\-]?)\s*((\d+)d(\d+)|\d+)/gi,
+            subpattern: '/([\+\-]?)\s*((\d+)d(\d+)|\d+)/gi',
             example: ['[XdY+C]'],
             desc: ['Roll any combination of dice and static modifiers.'],
             game: [],
             func: function (message, match, cmd) {generalRoll(message, match, cmd)},
             permission: '',
-            hidden: false
+            hidden: false,
+            topic: ['rolls']
         },
         { // Shadowrun basic rolls
             //            (nDice                                                    )    (limit                                                                   )    (e)    (type   )    (mDice                                                    )    (limit                                                                   )    (e)    (extraparam             )     
@@ -2326,7 +2874,8 @@ function getChatCommandList() {
             game: ['SR5e'],
             func: function (message, match, cmd) {shadowrunBasicRoll(message, match, cmd)}, // TODO: Change command
             permission: '',
-            hidden: false
+            hidden: false,
+            topic: ['rolls']
         },
         { // Blades in the Dark / Karma in the Dark rolls
             //            (nDice                                                    )    (limit                                                                   )    (e)    (type   )    (mDice                                                    )    (limit                                                                   )    (e)    (extraparam             )     
@@ -2341,7 +2890,8 @@ function getChatCommandList() {
             game: ['kitd'],
             func: function (message, match, cmd) {karmaInTheDarkRoll(message, match, cmd)},
             permission: '',
-            hidden: false
+            hidden: false,
+            topic: ['rolls']
         }
     ];
 }
