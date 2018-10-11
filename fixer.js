@@ -82,7 +82,7 @@ process.argv.forEach(function (val, index, array) {
             args[matches[1]] = matches[2];
         }
     }
-    for (var ii = 0; ii < reqArgs.length; ii++) {
+    for (var ii = 0; ii < optArgs.length; ii++) {
         let reArg = new RegExp('\-\(' + optArgs[ii] + '\)\=([^\ ]+)');
         if (reArg.test(val)) {
             let matches = reArg.exec(val);
