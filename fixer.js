@@ -144,7 +144,11 @@ client.on('message', message => { // TODO: check client.on('messageUpdate',oldMe
                 let matches = regExDelim.exec(message.content);
                 // while a section is found
                 while (matches) {
-                    if (matches[1].length > maxParsingLength) { message.reply(`I can only parse messages of up to ${maxParsingLength} characters (your's was ${matches[1].length}).`); matches = regExDelim.exec(message.content); continue;}
+                    if (matches[1].length > maxParsingLength) { 
+                        message.reply(`I can only parse messages of up to ${maxParsingLength} characters (your's was ${matches[1].length}).`);
+                        matches = regExDelim.exec(message.content); 
+                        continue;
+                    }
                     let match = matches[1];
                     // go through the list of commands
                     let commands = getChatCommandList(message);
@@ -417,7 +421,7 @@ function generalRoll(message,match,command) {
             let nDice = parser.evaluate(matches[3]);
             let nSides = parser.evaluate(matches[4]);
             nTotalDice += nDice;
-            if (!messageAssert(message,nTotalDice <= maxDiceToRoll),`I can't roll more than ${maxDiceToRoll} dice.`) { return; };
+            if (!messageAssert(message,nTotalDice <= maxDiceToRoll,`I can't roll more than ${maxDiceToRoll} dice.`)) { return; };
             let result = XdY(nDice,nSides,sign);
             elementValue.push(result.sum);
             elementRolls.push(result.rolls);
@@ -479,8 +483,8 @@ function shadowrunBasicRoll(message,match,command) {
     let edgeUseA = matches[3] ? matches[3] == '!' : false;
     let rollType = matches[4] ? matches[4].toLowerCase() : '';
     let nDiceB = sr5RollCodeParser(message,matches[5]);
-    if (!messageAssert(message, nDiceB >= 0,`I can't roll less than 0 dice!`)) { return; };
-    if (!messageAssert(message, nDiceB <= maxDiceToRoll,`I can't roll more than ${maxDiceToRoll} dice!`)) { return; };
+    if (!messageAssert(message, !(nDiceB < 0),`I can't roll less than 0 dice!`)) { return; };
+    if (!messageAssert(message, !(nDiceB > maxDiceToRoll),`I can't roll more than ${maxDiceToRoll} dice!`)) { return; };
     let limitB = sr5RollCodeParser(message,matches[6] ? matches[6].trim('()') : matches[6]);
     let edgeUseB = matches[7] ? matches[7] == '!' : false;
     let extraParam = matches[8] ? matches[8].substr(1).split(',') : undefined;
@@ -2864,7 +2868,7 @@ function getChatCommandList(message) {
         { // General dice roll
             pattern: /^\s*(\s*[\+\-]?\s*(\d+d\d+|\d+))*\s*([\+\-]?\s*\d+d\d+)\s*(\s*[\+\-]?\s*(\d+d\d+|\d+))*\s*$/i,
             //pattern: /^\s*(?:([\+\-]?)\s*(\d+d\d+|\d+))(?:\s*([\+\-])\s*(\d+d\d+|\d+))*\s*$/i,
-            subpattern: '/([\+\-]?)\s*((\d+)d(\d+)|\d+)/gi',
+            subpattern: /([\+\-]?)\s*((\d+)d(\d+)|\d+)/gi,
             example: ['[XdY+C]'],
             desc: ['Roll any combination of dice and static modifiers.'],
             game: [],
