@@ -62,6 +62,7 @@ const internalFieldPrefix = '__';
 const activeCombatFieldName = `${internalFieldPrefix}activeCombat`;
 const maxParsingLength = 100;
 const maxDiceToRoll = 100;
+const maxCommandsPerMessage = 5;
 /*
 ####################################################################################
 # Parse and validate input arguments
@@ -142,8 +143,11 @@ client.on('message', message => { // TODO: check client.on('messageUpdate',oldMe
                 // find all sections in brackets (not accounting for nesting)
                 let regExDelim = new RegExp(/\[([^\]]+)\]/gi);
                 let matches = regExDelim.exec(message.content);
+                let nMatches = 0;
                 // while a section is found
                 while (matches) {
+                    nMatches += 1;
+                    if (!messageAssert(message,nMatches <= maxCommandsPerMessage, `I can't handle more than ${maxCommandsPerMessage} commands in a single message.`)) { return; };
                     if (matches[1].length > maxParsingLength) { 
                         message.reply(`I can only parse messages of up to ${maxParsingLength} characters (your's was ${matches[1].length}).`);
                         matches = regExDelim.exec(message.content); 
