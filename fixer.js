@@ -48,7 +48,7 @@ const discordCodeBlockWrapper = '```';
 # Fixer parameters
 ####################################################################################
 */
-const versionId = '0.6.4';
+const versionId = '0.6.5';
 const games = {'SR5e':'SR5e','DnD5e':'DnD5e','kitd':'Karma in the Dark'};
 const outputLevels = {'minimal':1,'regular':2,'verbose':3};
 const botSavePath = 'fixer.json';
@@ -60,6 +60,9 @@ var bot = {};
 var args = {};
 const internalFieldPrefix = '__';
 const activeCombatFieldName = `${internalFieldPrefix}activeCombat`;
+const maxParsingLength = 100;
+const maxDiceToRoll = 100;
+const maxCommandsPerMessage = 5;
 /*
 ####################################################################################
 # Parse and validate input arguments
@@ -140,9 +143,16 @@ client.on('message', message => { // TODO: check client.on('messageUpdate',oldMe
                 // find all sections in brackets (not accounting for nesting)
                 let regExDelim = new RegExp(/\[([^\]]+)\]/gi);
                 let matches = regExDelim.exec(message.content);
+                let nMatches = 0;
                 // while a section is found
                 while (matches) {
-                    if (matches[1].length > 40) { message.reply("Awfully verbose there chief, mind being a bit more brief?"); matches = regExDelim.exec(message.content); continue;}
+                    nMatches += 1;
+                    if (!messageAssert(message,nMatches <= maxCommandsPerMessage, `I can't handle more than ${maxCommandsPerMessage} commands in a single message.`)) { return; };
+                    if (matches[1].length > maxParsingLength) { 
+                        message.reply(`I can only parse messages of up to ${maxParsingLength} characters (your's was ${matches[1].length}).`);
+                        matches = regExDelim.exec(message.content); 
+                        continue;
+                    }
                     let match = matches[1];
                     // go through the list of commands
                     let commands = getChatCommandList(message);
@@ -404,23 +414,33 @@ function generalRoll(message,match,command) {
     let elementRolls = [];
     let elementCode = [];
     let parser = new Parser();
-    if (match.length > 30) { message.reply("Awfully verbose there chief. Could you be a bit more brief?"); return; }
+    let nTotalDice = 0;
     while (matches) {
         if (isNaN(matches[2])) {
             // main component is not just a number, so it is XdY
-            if (matches.length < 4 || isNaN(matches[3]) || matches[3].length > 3 ) { message.reply("Can't hold all those dice, chief"); return; }
-            if (matches.length < 5 || isNaN(matches[4]) || matches[4].length > 5 ) { message.reply("How many sides on those dice again?"); return; }
-            let result = XdY(matches[3],matches[4],matches[1]);
+            if (!messageAssert(message,matches.length >= 4 && !isNaN(matches[3]),`I can't work out how many dice you want to roll.`)) { return; };
+            if (!messageAssert(message,matches.length >= 5 && !isNaN(matches[4]),`I can't work out how many sides are on those dice.`)) { return; };
+            let sign = matches[1];
+            let code = matches[2];
+            let nDice = parser.evaluate(matches[3]);
+            let nSides = parser.evaluate(matches[4]);
+            nTotalDice += nDice;
+            if (!messageAssert(message,nTotalDice <= maxDiceToRoll,`I can't roll more than ${maxDiceToRoll} dice.`)) { return; };
+            let result = XdY(nDice,nSides,sign);
             elementValue.push(result.sum);
             elementRolls.push(result.rolls);
-            elementSign.push(matches[1]);
-            elementCode.push(matches[2]);
+            elementSign.push(sign);
+            elementCode.push(code);
         } else {
             // main component is a number, so a constant
-            elementValue.push(parser.evaluate(matches[0]));
-            elementRolls.push([parser.evaluate(matches[2])]);
-            elementSign.push(matches[1]);
-            elementCode.push(matches[2]);
+            let value = parser.evaluate(matches[0]);
+            let rolls = [parser.evaluate(matches[2])];
+            let sign = matches[1];
+            let code = matches[2];
+            elementValue.push(value);
+            elementRolls.push(rolls);
+            elementSign.push(sign);
+            elementCode.push(code);
         }
         matches = regExSub.exec(match);
     }
@@ -433,7 +453,6 @@ function shadowrunBasicRoll(message,match,command) {
     let regEx = new RegExp(command.pattern);
     let regExSub = new RegExp(command.subpattern)
     let matches = regEx.exec(match);
-    if (match.length > 30) { message.reply("Awfully verbose there chief. Could you be a bit more brief?"); return; }
 
     let channelId = message.channel.id;
     let activeGame = getGameMode(message);
@@ -462,14 +481,14 @@ function shadowrunBasicRoll(message,match,command) {
     }
 
     let nDiceA = sr5RollCodeParser(message,matches[1]);
-    if (nDiceA < 0) { message.reply("You want me to roll how many dice?!"); return; }
-    if (nDiceA > 100 || isNaN(nDiceA)) { message.reply("Can't hold all those dice, chief"); return; }
+    if (!messageAssert(message, nDiceA >= 0,`I can't roll less than 0 dice!`)) { return; };
+    if (!messageAssert(message, nDiceA <= maxDiceToRoll,`I can't roll more than ${maxDiceToRoll} dice!`)) { return; };
     let limitA = sr5RollCodeParser(message,matches[2] ? matches[2].trim('()') : matches[2]);
     let edgeUseA = matches[3] ? matches[3] == '!' : false;
     let rollType = matches[4] ? matches[4].toLowerCase() : '';
     let nDiceB = sr5RollCodeParser(message,matches[5]);
-    if (nDiceB < 0) { message.reply("You want me to roll how many dice?!"); return; }
-    if (nDiceB > 100) { message.reply("Can't hold all those dice, chief"); return; }
+    if (!messageAssert(message, !(nDiceB < 0),`I can't roll less than 0 dice!`)) { return; };
+    if (!messageAssert(message, !(nDiceB > maxDiceToRoll),`I can't roll more than ${maxDiceToRoll} dice!`)) { return; };
     let limitB = sr5RollCodeParser(message,matches[6] ? matches[6].trim('()') : matches[6]);
     let edgeUseB = matches[7] ? matches[7] == '!' : false;
     let extraParam = matches[8] ? matches[8].substr(1).split(',') : undefined;
@@ -2853,7 +2872,7 @@ function getChatCommandList(message) {
         { // General dice roll
             pattern: /^\s*(\s*[\+\-]?\s*(\d+d\d+|\d+))*\s*([\+\-]?\s*\d+d\d+)\s*(\s*[\+\-]?\s*(\d+d\d+|\d+))*\s*$/i,
             //pattern: /^\s*(?:([\+\-]?)\s*(\d+d\d+|\d+))(?:\s*([\+\-])\s*(\d+d\d+|\d+))*\s*$/i,
-            subpattern: '/([\+\-]?)\s*((\d+)d(\d+)|\d+)/gi',
+            subpattern: /([\+\-]?)\s*((\d+)d(\d+)|\d+)/gi,
             example: ['[XdY+C]'],
             desc: ['Roll any combination of dice and static modifiers.'],
             game: [],
