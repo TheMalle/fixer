@@ -61,7 +61,7 @@ var args = {};
 const internalFieldPrefix = '__';
 const activeCombatFieldName = `${internalFieldPrefix}activeCombat`;
 const maxParsingLength = 100;
-const maxDiceToRoll = 50;
+const maxDiceToRoll = 100;
 /*
 ####################################################################################
 # Parse and validate input arguments
