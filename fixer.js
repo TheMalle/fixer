@@ -822,6 +822,8 @@ function sr5Initiative(message,match,command) {
     let gameId = getGameMode(message);
     let regEx = new RegExp(command.pattern);
     let matches = regEx.exec(match);
+    let userId = message.author.id;
+    let userName = message.author.username;
 
     // Catching failed matches, they have a single match for the entire string
     if (!messageAssert(message,matches.length>1,"I cannot parse that initiative command.")) { return; };
@@ -831,7 +833,6 @@ function sr5Initiative(message,match,command) {
     let charName = matches[2];
     let rollCode = matches[3];
     let appendInfo = matches[4]
-    //message.reply(`I believe that's an initiative command:\n**Action:** ${initAction}\n**Name:** ${charName}\n**Roll:** ${rollCode}\n**Additionally:** ${appendInfo}`);
 
     // ensure that the data structure for initiative is in place
     ensureInitiative(channelId,gameId);
@@ -839,9 +840,10 @@ function sr5Initiative(message,match,command) {
     // Get message data and other metadata
 
     let initData = bot.channel[channelId].game[gameId].init;
-    let charFieldName = !charName ? "" : charName.toFieldName();
-    let charExists = !charName ? false : initHasCharacter(channelId,gameId,charName);
-    let existingCharName = !charExists ? "" : initData.character[charFieldName].name
+    let charFieldName = charName ? charName.toFieldName() : userId.toFieldName();
+    charName = charName ? charName : userName;
+    let charExists = !charName ? false : initHasCharacter(channelId,gameId,charFieldName);
+    let existingCharName = !charExists ? null : initData.character[charFieldName].name
     let combatIsActive = initHasCombat(channelId,gameId);
     let initCharacters = Object.keys(initData.character).length;
     let blitz = !appendInfo ? false : appendInfo.includes("blitz");
@@ -872,13 +874,12 @@ function sr5Initiative(message,match,command) {
             message.reply(`added ${charName} to the initiative tracker with ${rollCode} initiative.`)
             break;
         case 'add loaded':
-            let userId = message.author.id;
             let charData = getCurrentUserCharacter(channelId,gameId,userId);
             if (!messageAssert(message,charData,"either you do not have a character loaded, or something went wrong when retrieving the character data.")) { return; };
             charName = charData.alias;
-            charFieldName = !charName ? "" : charName.toFieldName();
-            charExists = !charName ? false : initHasCharacter(channelId,gameId,charName);
-            existingCharName = !charExists ? "" : initData.character[charFieldName].name
+            charFieldName = userId.toFieldName();
+            charExists = initHasCharacter(channelId,gameId,userId);
+            existingCharName = !charExists ? "" : initData.character[userId].name
             if (!messageAssert(message, !charExists, `there is already a character stored with the key for that name (key: ${charFieldName}, stored name: ${existingCharName})`)) { return; };
             let initType = astral ? 'astral' : 'meat';
             rollCode = `${charData.initiative[initType].base}+${charData.initiative[initType].dice}d6`;
@@ -903,11 +904,14 @@ function sr5Initiative(message,match,command) {
             };
             message.reply(`added loaded character ${charName} to the initiative tracker with ${rollCode} initiative.`)
             break;
+
         case 'change':
             message.reply(`the '${initAction}' initiative action is not implemented yet.`);
             break;
 
         case 'remove':
+            // If the character does not exist, 
+
             if (!messageAssert(message, charExists, `no character found with the name "${charName}"`)) { return; };
             delete bot.channel[channelId].game[gameId].init.character[charFieldName];
             if (combatIsActive && charFieldName == bot.channel[channelId].game[gameId].init[activeCombatFieldName].currentCharacter) {
@@ -918,15 +922,24 @@ function sr5Initiative(message,match,command) {
             break;
 
         case 'blitz':
-            message.reply(`the '${initAction}' initiative action is not implemented yet.`);
+            if (!messageAssert(message, charExists, `no character found with the name "${charName}"`)) { return; };
+            let newBlitz = !bot.channel[channelId].game[gameId].init.character[charFieldName].blitz;
+            bot.channel[channelId].game[gameId].init.character[charFieldName].blitz = newBlitz;
+            message.reply(`${charName} will ${!newBlitz ? 'not blitz next combat turn.' : 'blitz next combat turn, using five initiative dice.'}`);
             break;
 
         case 'seize':
-            message.reply(`the '${initAction}' initiative action is not implemented yet.`);
+            if (!messageAssert(message, charExists, `no character found with the name "${charName}"`)) { return; };
+            let newSeize = !bot.channel[channelId].game[gameId].init.character[charFieldName].seize;
+            bot.channel[channelId].game[gameId].init.character[charFieldName].seize = newSeize;
+            message.reply(`${charName} will ${!newSeize ? 'not seize the initiative next combat turn.' : 'seize the initiative next combat turn, having priority to act first regardless of initiative score.'}`);
             break;
 
         case 'surge':
-            message.reply(`the '${initAction}' initiative action is not implemented yet.`);
+            if (!messageAssert(message, charExists, `no character found with the name "${charName}"`)) { return; };
+            let newSurge = !bot.channel[channelId].game[gameId].init.character[charFieldName].surge;
+            bot.channel[channelId].game[gameId].init.character[charFieldName].surge = newSurge;
+            message.reply(`${charName} ${!newSurge ? 'no longer has Adrenaline Surge.' : 'now has Adrenaline Surge, having priority to act first regardless of initiative score in the first initiative pass of the first combat turn.'}`);
             break;
 
         case 'start':
@@ -1922,6 +1935,8 @@ function printSr5InitiativeTable(message) {
             }
         }
 
+        // TODO: Add in display of characters who have no remaining passes whatsoever
+
         if (initOrder.length > 0) {
             let desc = `${initOrder[ii].init}: ${initOrder[ii].name}\n`;
             let passNum = bot.channel[channelId].game[gameId].init[activeCombatFieldName].initiativePass;
@@ -2247,9 +2262,9 @@ function gameHasInitiative(channelId,gameId) {
         return false;
     }
 }
-function initHasCharacter(channelId,gameId,charName) {
+function initHasCharacter(channelId,gameId,charFieldName) {
     if (gameHasInitiative(channelId,gameId)) {
-        return (charName.toFieldName() in bot.channel[channelId].game[gameId].init.character);
+        return (charFieldName in bot.channel[channelId].game[gameId].init.character);
     }
     return false;
 }
@@ -2432,6 +2447,14 @@ function sr5InitiativeNewTurn(message) {
 
     // Print the current state
     printSr5InitiativeTable(message);
+
+    // Reset flags for edge spending
+    let characterKeys = Object.keys(bot.channel[channelId].game[gameId].init.character);
+    for (var ii=0;ii<characterKeys.length;ii++) {
+        let charKey = characterKeys[ii];
+        bot.channel[channelId].game[gameId].init.character[charKey].blitz = false;
+        bot.channel[channelId].game[gameId].init.character[charKey].seize = false;
+    }
 }
 function sr5InitiativeNewPass(message){
     // Reset actedThisPass
@@ -2495,13 +2518,6 @@ function sr5RollInitiative(message) {
 
     // Set whoever shall act first
     sr5NextInitiativeCharacter(message);
-
-    // Reset flags for edge spending
-    for (var ii=0;ii<characterKeys.length;ii++) {
-        bot.channel[channelId].game[gameId].init.character[charKey].blitz = false;
-        bot.channel[channelId].game[gameId].init.character[charKey].seize = false;
-    }
-
 }
 function sr5NextInitiativeCharacter(message){
     // Find the highest prioritized character who has not acted
