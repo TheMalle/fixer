@@ -714,6 +714,10 @@ function importCharacterSaveFile(message,match,command) {
         if (!success) {
             message.reply('failed to load character from paste ' + pastebinId + ' because: ' + data.message);
         } else {
+            if (!data.startsWith("<xml")) { 
+                let regEx = new RegExp ();
+                data = data.replace(/^((?!\<\?xml).)*/,"");
+            }
             parseString(data, function (err, result) {
                 if (activeGame == games.SR5e) {
                     parseSr5Character(message, result, alias);
