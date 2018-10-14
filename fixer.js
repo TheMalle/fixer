@@ -844,6 +844,7 @@ function sr5Initiative(message,match,command) {
     let seize = !appendInfo ? false : appendInfo.includes("seize");
     let surprise = !appendInfo ? false : appendInfo.includes("surprise")
     let surge = !appendInfo ? false : appendInfo.includes("surge")
+    let astral = !appendInfo ? false : appendInfo.includes("astral")
 
     // Perform initiative actions
     switch (initAction.toLowerCase()) {
@@ -865,7 +866,38 @@ function sr5Initiative(message,match,command) {
                 tiebreaker: null
             };
             break;
+        case 'add loaded':
+            let userId = message.author.id;
+            let charData = getCurrentUserCharacter(channelId,gameId,userId);
+            if (!messageAssert(message,charData,"either you do not have a character loaded, or something went wrong when retrieving the character data.")) { return; };
+            charName = charData.alias;
+            charFieldName = !charName ? "" : charName.toFieldName();
+            charExists = !charName ? false : initHasCharacter(channelId,gameId,charName);
+            existingCharName = !charExists ? "" : initData.character[charFieldName].name
+            if (!messageAssert(message, !charExists, `there is already a character stored with the key for that name (key: ${charFieldName}, stored name: ${existingCharName})`)) { return; };
+            let initType = astral ? 'astral' : 'meat';
+            rollCode = `${charData.initiative[initType].base}+${charData.initiative[initType].dice}d6`;
+            let edge =  charData.attributes['EDG'].totalValue;
+            let reaction = charData.attributes['REA'].totalValue;
+            let intuition = charData.attributes['INT'].totalValue;
 
+            bot.channel[channelId].game[gameId].init.character[charFieldName] = {
+                name: charName,
+                rollCode: rollCode,
+                blitz: blitz,
+                seize: seize,
+                surprise: surprise,
+                surge: surge,
+                actedThisPass: false,
+                currentInit: null,
+                removedFromCombat: false,
+                edge: edge,
+                reaction: reaction,
+                intuition: intuition,
+                tiebreaker: null
+            };
+
+            break;
         case 'change':
             message.reply(`the '${initAction}' initiative action is not implemented yet.`);
             break;
@@ -933,6 +965,19 @@ function sr5Initiative(message,match,command) {
 }
 
 function dev(message,match,command) {
+}
+
+function getCurrentUserCharacter(channelId,gameId,userId) {
+    if (gameHasUser(channelId,gameId,userId)) {
+        let userData = bot.channel[channelId].game[gameId].user[userId];
+        if ('activeCharacter' in userData) {
+            if (userData.activeCharacter) {
+                let activeCharName = userData.activeCharacter;
+                return userData.character[activeCharName];
+            }
+        }
+    }
+    return null;
 }
 /*
 ####################################################################################
@@ -2057,14 +2102,6 @@ function parseSr5Character(message, chummerJson, alias) {
                   'dice': 1+(('initiativedice' in improvements) ? improvements['initiativedice']['initiativedice'] : 0)},
     */
 
-
-    let charData = {
-        'alias': chummerJson.character.alias[0],
-        'initiative': initiative,
-        'attributes': attributes,
-        'activeSkills': activeSkills,
-    }
-
     // Assign the character data to the user and channel
     let activeGame = getGameMode(message);
     let userId = message.author.id;
@@ -2072,6 +2109,13 @@ function parseSr5Character(message, chummerJson, alias) {
     alias = alias ? alias : chummerJson.character.alias[0]; // If no alias supplied, use alias from the character
     if (!messageAssert(message,alias,'either supply an alias for the character in the save file, or supply an alias in the chat command')) { return; }
     
+    let charData = {
+        'alias': alias,
+        'initiative': initiative,
+        'attributes': attributes,
+        'activeSkills': activeSkills,
+    }
+
     saveCharacterData(channelId,activeGame,userId,alias,charData);
     setActiveCharacter(message,alias);
     message.reply('loaded ' + (chummerJson.character.alias[0] ? '"' + chummerJson.character.alias[0] + '"' : 'character without alias') + ', saved as "' + alias + '"');
@@ -2666,10 +2710,11 @@ function getChatCommandList(message) {
         }, 
         { // SR5 Initiative 
             //                   action type            "name"            dice code
-            pattern: /^\s*init\s+(add|change|remove|blitz|seize|surge|start|next|new turn|end|clear|show|details)\s*(?:\"([^\"]+)\")?\s*((?:\s*[\+\-]?\s*(?:\d+d\d+|\d+))*\s*(?:[\+\-]?\s*\d+d\d+)\s*(?:\s*[\+\-]?\s*(?:\d+d\d+|\d+))*)?\s*((?:(?:surge|blitz|seize|surprised?)\s*)+)?\s*$/i,
+            pattern: /^\s*init\s+(add|add loaded|change|remove|blitz|seize|surge|start|next|new turn|end|clear|show|details)\s*(?:\"([^\"]+)\")?\s*((?:\s*[\+\-]?\s*(?:\d+d\d+|\d+))*\s*(?:[\+\-]?\s*\d+d\d+)\s*(?:\s*[\+\-]?\s*(?:\d+d\d+|\d+))*)?\s*((?:(?:surge|blitz|seize|surprised|astral?)\s*)+)?\s*$/i,
             subpattern: /([\+\-]?)\s*((\d+)d(\d+)|\d+)/gi,
             example: [
                  '[init add XdY+C], [init add "<name>" XdY+C]'
+                ,'[init add loaded], [init add loaded astral], [init add loaded XdY+C]'
                 ,'[... surge], [... blitz], [... seize], [... surprised]'
                 ,'[init change XdY+C], [init change "<name>" XdY+C]'
                 ,'[init remove], [init remove "<name>"]'
@@ -2686,7 +2731,8 @@ function getChatCommandList(message) {
             ],
             desc: [
                   'Add a character to the initiative list with the given initiative dice pool. If the character name is omitted, it uses your user name.'
-                , 'Append surge, blitz, seize, or surprised to the *[init add]* command if you are using adrenaline surge, spending edge to blitz or seize the initiative, or if you are surprised'
+                , 'Add your currently loaded character to the initiative list. Adding the *astral* keyword uses the character\s astral initiative instead. Supply the initiative value to use that specific value.'
+                , 'Append surge, blitz, seize, or surprised to any of the *[init add]* commands if you are using adrenaline surge, spending edge to blitz or seize the initiative, or if you are surprised'
                 , 'Change the initiative of your character to the new value, immediately affecting any current initiative score. If the character name is omitted, it uses your user name.'
                 , 'Removes the character from the initiative tracker. If the character name is omitted, it uses your user name.'
                 , 'Blitz for the next combat turn. Set the initiative dice of the character to +5d6 for one combat turn. If the character name is omitted, it uses your user name.'
