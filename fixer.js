@@ -918,15 +918,24 @@ function sr5Initiative(message,match,command) {
             break;
 
         case 'blitz':
-            message.reply(`the '${initAction}' initiative action is not implemented yet.`);
+            if (!messageAssert(message, charExists, `no character found with the name "${charName}"`)) { return; };
+            let newBlitz = !bot.channel[channelId].game[gameId].init.character[charFieldName].blitz;
+            bot.channel[channelId].game[gameId].init.character[charFieldName].blitz = newBlitz;
+            message.reply(`${charName} will ${!newBlitz ? 'not blitz next combat turn.' : 'blitz next combat turn, using five initiative dice.'}`);
             break;
 
         case 'seize':
-            message.reply(`the '${initAction}' initiative action is not implemented yet.`);
+            if (!messageAssert(message, charExists, `no character found with the name "${charName}"`)) { return; };
+            let newSeize = !bot.channel[channelId].game[gameId].init.character[charFieldName].seize;
+            bot.channel[channelId].game[gameId].init.character[charFieldName].seize = newSeize;
+            message.reply(`${charName} will ${!newSeize ? 'not seize the initiative next combat turn.' : 'seize the initiative next combat turn, having priority to act first regardless of initiative score.'}`);
             break;
 
         case 'surge':
-            message.reply(`the '${initAction}' initiative action is not implemented yet.`);
+            if (!messageAssert(message, charExists, `no character found with the name "${charName}"`)) { return; };
+            let newSurge = !bot.channel[channelId].game[gameId].init.character[charFieldName].surge;
+            bot.channel[channelId].game[gameId].init.character[charFieldName].surge = newSurge;
+            message.reply(`${charName} ${!newSurge ? 'no longer has Adrenaline Surge.' : 'now has Adrenaline Surge, having priority to act first regardless of initiative score in the first initiative pass of the first combat turn.'}`);
             break;
 
         case 'start':
