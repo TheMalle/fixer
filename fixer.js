@@ -869,6 +869,7 @@ function sr5Initiative(message,match,command) {
                 intuition: 0,
                 tiebreaker: null
             };
+            message.reply(`added ${charName} to the initiative tracker with ${rollCode} initiative.`)
             break;
         case 'add loaded':
             let userId = message.author.id;
@@ -900,7 +901,7 @@ function sr5Initiative(message,match,command) {
                 intuition: intuition,
                 tiebreaker: null
             };
-
+            message.reply(`added loaded character ${charName} to the initiative tracker with ${rollCode} initiative.`)
             break;
         case 'change':
             message.reply(`the '${initAction}' initiative action is not implemented yet.`);
@@ -913,6 +914,7 @@ function sr5Initiative(message,match,command) {
                 bot.channel[channelId].game[gameId].init[activeCombatFieldName].currentCharacter = null;
                 sr5NextInitiativeCharacter(message);
             }
+            message.reply(`removed ${charName} from the initiative tracker.`)
             break;
 
         case 'blitz':
@@ -939,22 +941,24 @@ function sr5Initiative(message,match,command) {
             break;
 
         case 'new turn':
-            if (!messageAssert(message, combatIsActive, "combat isn't running!")) { return; };
+            if (!messageAssert(message, combatIsActive, "combat hasn't started!")) { return; };
             sr5InitiativeNewTurn(message);
             break;
 
         case 'end':
-            if (!messageAssert(message, combatIsActive, "combat isn't running!")) { return; };
+            if (!messageAssert(message, combatIsActive, "combat hasn't started!")) { return; };
             delete bot.channel[channelId].game[gameId].init[activeCombatFieldName];
+            message.reply(`combat is now ended, but all characters remain in the tracker.`)
             break;
 
         case 'clear':
             delete bot.channel[channelId].game[gameId].init[activeCombatFieldName];
             bot.channel[channelId].game[gameId].init.character = {};
+            message.reply(`initiative tracker cleared and combat ended.`)
             break;
 
         case 'show':
-            if (!messageAssert(message, combatIsActive, "combat isn't running!")) { return; };
+            if (!messageAssert(message, combatIsActive, "combat hasn't started!")) { return; };
             printSr5InitiativeTable(message);
             break;
 
