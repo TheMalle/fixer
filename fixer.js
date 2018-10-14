@@ -2033,8 +2033,6 @@ function printSr5InitiativeTable(message) {
         }
 
         // Then, go through all characters at successive -10 init for each pass through
-        // Note that characters that have acted are already at the initiative the should be
-        // for the next pass, so they should take one less penalty than others
         let penalty = 0;
         let actComingTurn = ['dummy'];
         while (actComingTurn.length > 0) {
@@ -2043,14 +2041,14 @@ function printSr5InitiativeTable(message) {
             for (var ii=0;ii<charKeys.length;ii++) {
                 let charKey = charKeys[ii];
                 let thisChar = initData.character[charKey];
-                let thisCharNextInit = thisChar.currentInit - penalty + (thisChar.actedThisPass ? 10 : 0);
+                let thisCharNextInit = thisChar.currentInit - penalty;
                 if (thisCharNextInit > 0) {
                     actComingTurn.push(thisChar);
                 }
             }
-            actComingTurn.sort(function(a,b){return sr5CompareInitiativeOrder(channelId,gameId,a,b,true)});
+            actComingTurn.sort(function(a,b){return sr5CompareInitiativeOrder(channelId,gameId,a,b)});
             for (var ii=0;ii<actComingTurn.length;ii++) {
-                initOrder.push({name: actComingTurn[ii].name, init: actComingTurn[ii].currentInit-penalty+(actComingTurn[ii].actedThisPass ? 10 : 0), pass: penalty});
+                initOrder.push({name: actComingTurn[ii].name, init: actComingTurn[ii].currentInit-penalty, pass: penalty});
             }
         }
 
@@ -2576,10 +2574,19 @@ function sr5InitiativeNewTurn(message) {
     }
 }
 function sr5InitiativeNewPass(message){
-    // Reset actedThisPass
     let channelId = message.channel.id;
     let gameId = getGameMode(message);
     let characterKeys = Object.keys(bot.channel[channelId].game[gameId].init.character);
+    
+    // Reduce initiative of all participants
+    for (var ii=0;ii<characterKeys.length;ii++) {
+        let charKey = characterKeys[ii];
+        let currInit = bot.channel[channelId].game[gameId].init.character[charKey].currentInit;
+        let newInit = currInit == null ? null : currInit - 10;
+        bot.channel[channelId].game[gameId].init.character[charKey].currentInit = newInit;
+    }
+
+    // Reset actedThisPass
     for (var ii=0;ii<characterKeys.length;ii++) {
         charKey = characterKeys[ii];
         bot.channel[channelId].game[gameId].init.character[charKey].actedThisPass = false;
@@ -2595,10 +2602,9 @@ function sr5InitiativeNextCharacter(message) {
     let channelId = message.channel.id;
     let gameId = getGameMode(message);
 
-    // Mark current character as having acted and reduce initiative
+    // Mark current character as having acted
     let currCharKey = bot.channel[channelId].game[gameId].init[activeCombatFieldName].currentCharacter;
     bot.channel[channelId].game[gameId].init.character[currCharKey].actedThisPass = true;
-    bot.channel[channelId].game[gameId].init.character[currCharKey].currentInit -= 10;
 
     // Get the next character to act this pass
     sr5NextInitiativeCharacter(message);
