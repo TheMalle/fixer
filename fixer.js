@@ -828,7 +828,7 @@ function sr5Initiative(message,match,command) {
 
     // Get the data from a successful match
     let initAction = matches[1];
-    let charName = matches[2];
+    let charName = matches[2] ? matches[2] : message.author.username;
     let rollCode = matches[3];
     let appendInfo = matches[4]
     //message.reply(`I believe that's an initiative command:\n**Action:** ${initAction}\n**Name:** ${charName}\n**Roll:** ${rollCode}\n**Additionally:** ${appendInfo}`);
