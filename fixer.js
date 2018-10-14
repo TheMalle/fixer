@@ -856,9 +856,14 @@ function sr5Initiative(message,match,command) {
     switch (initAction.toLowerCase()) {
         case 'add':
             if (!messageAssert(message, !charExists, `there is already a character stored with the key for that name (key: ${charFieldName}, stored name: ${existingCharName})`)) { return; };
+            let rollCodeParsed = parseD6Roll(rollCode);
+            let staticValue = rollCodeParsed.staticValue;
+            let dice = rollCodeParsed.addDice-rollCodeParsed.subDice;
+            dice = Math.max(1,Math.min(5,dice));
+            let condensedRollCode = getRollCode(dice,staticValue,1,5,null,null);
             bot.channel[channelId].game[gameId].init.character[charFieldName] = {
                 name: charName,
-                rollCode: rollCode,
+                rollCode: condensedRollCode,
                 blitz: blitz,
                 seize: seize,
                 surprise: surprise,
@@ -871,7 +876,7 @@ function sr5Initiative(message,match,command) {
                 intuition: 0,
                 tiebreaker: null
             };
-            message.reply(`added ${charName} to the initiative tracker with ${rollCode} initiative.`)
+            message.reply(`added ${charName} to the initiative tracker with ${condensedRollCode} initiative.`)
             break;
         case 'add loaded':
             let charData = getCurrentUserCharacter(channelId,gameId,userId);
@@ -882,7 +887,7 @@ function sr5Initiative(message,match,command) {
             existingCharName = !charExists ? "" : initData.character[userId].name
             if (!messageAssert(message, !charExists, `there is already a character stored with the key for that name (key: ${charFieldName}, stored name: ${existingCharName})`)) { return; };
             let initType = astral ? 'astral' : 'meat';
-            rollCode = `${charData.initiative[initType].base}+${charData.initiative[initType].dice}d6`;
+            rollCode =  getRollCode(charData.initiative[initType].dice,charData.initiative[initType].base,1,5,null,null);
             let edge =  charData.attributes['EDG'].totalValue;
             let reaction = charData.attributes['REA'].totalValue;
             let intuition = charData.attributes['INT'].totalValue;
@@ -905,8 +910,83 @@ function sr5Initiative(message,match,command) {
             message.reply(`added loaded character ${charName} to the initiative tracker with ${rollCode} initiative.`)
             break;
 
-        case 'change':
-            message.reply(`the '${initAction}' initiative action is not implemented yet.`);
+        case 'set': // fall through to 'change'
+        case 'change': 
+            if (!messageAssert(message, charExists, `no character found with the name "${charName}"`)) { return; };
+            let regEx = new RegExp(/^\s*[\+\-]/);
+            if (regEx.test(rollCode)) {
+                // Roll code starts with a + or a -, treat as modifier
+                let currRollCode = bot.channel[channelId].game[gameId].init.character[charFieldName].rollCode
+
+                // We have the roll codes from the current and modified rolls, and can get the actual statistics from them
+                let currInitStats = parseD6Roll(currRollCode);
+                let modInitStats = parseD6Roll(rollCode);
+
+                // The current dice and static modified
+                let currDice = currInitStats.addDice-currInitStats.subDice;
+                let currStatic = currInitStats.staticValue;
+
+                // New values, not accounting for limits on dice
+                let newDice = currDice + modInitStats.addDice-modInitStats.subDice;
+                let newStatic = currStatic + modInitStats.staticValue;
+
+                // Get the new roll code where the limit on dice is applied
+                let newRollCode = getRollCode(newDice,newStatic,1,5,null,null);
+                let newInitStats = parseD6Roll(newRollCode);
+
+                // That gives us the actual change in dice and static values
+                let modDice = (newInitStats.addDice - newInitStats.subDice) - (currInitStats.addDice - currInitStats.subDice);
+                let modStatic = newInitStats.staticValue - currInitStats.staticValue;
+                let modRollCode = getRollCode(modDice,modStatic,1,5,null,null);
+                
+                // From which we can get the change in the initiative score
+                let modInitScore = XdY(modDice,6,null).sum + modStatic;
+                let currInitScore = bot.channel[channelId].game[gameId].init.character[charFieldName].currentInit;
+                let newInitScore = currInitScore == null ? null : currInitScore + modInitScore;
+
+                // And we save the new roll code and initiative score
+                bot.channel[channelId].game[gameId].init.character[charFieldName].rollCode = newRollCode;
+                bot.channel[channelId].game[gameId].init.character[charFieldName].currentInit = newInitScore;
+
+                // And reply to the user
+                message.reply(`initiative of ${charName} changed to ${newRollCode} (previously ${currRollCode}).${currInitScore == null ? '' : ` Their initiative score was changed by ${modInitScore} to ${newInitScore}.`}`)
+            } else {
+                // Treat roll code as set value
+                let currRollCode = bot.channel[channelId].game[gameId].init.character[charFieldName].rollCode
+
+                // We have the roll codes from the current and new rolls, and can get the actual statistics from them
+                let currInitStats = parseD6Roll(currRollCode);
+                let newInitStatsOrig = parseD6Roll(rollCode);
+
+                // The current dice and static modified
+                let currDice = currInitStats.addDice-currInitStats.subDice;
+                let currStatic = currInitStats.staticValue;
+
+                // New values, not accounting for limits on dice
+                let newDice = newInitStatsOrig.addDice - newInitStatsOrig.subDice;
+                let newStatic = newInitStatsOrig.staticValue;
+
+                // Get the new roll code where the limit on dice is applied
+                let newRollCode = getRollCode(newDice,newStatic,1,5,null,null);
+                let newInitStats = parseD6Roll(newRollCode);
+
+                // That gives us the actual change in dice and static values
+                let modDice = (newInitStats.addDice - newInitStats.subDice) - (currInitStats.addDice - currInitStats.subDice);
+                let modStatic = newInitStats.staticValue - currInitStats.staticValue;
+                
+                // From which we can get the change in the initiative score
+                let modInitScore = XdY(modDice,6,null).sum + modStatic;
+                let currInitScore = bot.channel[channelId].game[gameId].init.character[charFieldName].currentInit;
+                let newInitScore = currInitScore == null ? null : currInitScore + modInitScore;
+
+                // And we save the new roll code and initiative score
+                bot.channel[channelId].game[gameId].init.character[charFieldName].rollCode = newRollCode;
+                bot.channel[channelId].game[gameId].init.character[charFieldName].currentInit = newInitScore;
+
+                // And reply to the user
+                message.reply(`initiative of ${charName} set to ${newRollCode} (previously ${currRollCode}).${currInitScore == null ? '' : ` Their initiative score was changed by ${modInitScore} to ${newInitScore}.`}`)
+            }
+
             break;
 
         case 'remove':
@@ -1000,6 +1080,15 @@ function getCurrentUserCharacter(channelId,gameId,userId) {
     }
     return null;
 }
+
+function getRollCode(dice,static,minDice,maxDice,minStatic,maxStatic) {
+    dice = maxDice && maxDice < dice ? maxDice : dice;
+    dice = minDice && minDice > dice ? minDice : dice;
+    static = maxStatic && maxStatic < static ? maxStatic : static;
+    static = minStatic && minStatic > static ? minStatic : static;
+    return `${static < 0 ? '-' : ''}${static != 0 ? static : ''}${dice < 0 ? '-' : ''}${dice > 0  && static != 0 ? '+' : ''}${dice != 0 ? `${dice}d6` : ''}`;
+}
+
 /*
 ####################################################################################
 # Help topics
@@ -1193,9 +1282,13 @@ function getRandomInt(min, max) {
     return Math.floor(Math.random() * (max - min + 1)) + min;
 }
 function XdY(dice,sides,sign) {
-    if (dice == 0) { return {sum: 0, rolls: []}; };
+    if (!dice) { return {sum: 0, rolls: []}; };
     sign = sign ? sign : "+";
     sign = sign == "+" ? 1 : -1;
+    if (dice < 0) {
+        dice = -dice;
+        sign = -sign;
+    }
     let rolls = [];
     for (var ii=0;ii<dice;ii++) {
         rolls.push(getRandomInt(1,sides));
@@ -2733,14 +2826,15 @@ function getChatCommandList(message) {
             topic: ['character']
         }, 
         { // SR5 Initiative 
-            //                   action type            "name"            dice code
-            pattern: /^\s*init\s+(add|add loaded|change|remove|blitz|seize|surge|start|next|new turn|end|clear|show|details)\s*(?:\"([^\"]+)\")?\s*((?:\s*[\+\-]?\s*(?:\d+d\d+|\d+))*\s*(?:[\+\-]?\s*\d+d\d+)\s*(?:\s*[\+\-]?\s*(?:\d+d\d+|\d+))*)?\s*((?:(?:surge|blitz|seize|surprised|astral?)\s*)+)?\s*$/i,
+            //                   action type                                                                                       "name"             dice code                                  appended options                       
+            pattern: /^\s*init\s+(add|add loaded|change|set|remove|blitz|seize|surge|start|next|new turn|end|clear|show|details)\s*(?:\"([^\"]+)\")?\s*((?:\s*[\+\-]?\s*(?:\d+d\d+|\d+))*\s*)?\s*((?:(?:surge|blitz|seize|surprised|astral?)\s*)+)?\s*$/i,
             subpattern: /([\+\-]?)\s*((\d+)d(\d+)|\d+)/gi,
             example: [
                  '[init add XdY+C], [init add "<name>" XdY+C]'
                 ,'[init add loaded], [init add loaded astral], [init add loaded XdY+C]'
                 ,'[... surge], [... blitz], [... seize], [... surprised]'
-                ,'[init change XdY+C], [init change "<name>" XdY+C]'
+                ,'[init change XdY+C], [init change> "<name>" XdY+C]'
+                ,'[init set ...]'
                 ,'[init remove], [init remove "<name>"]'
                 ,'[init blitz], [init blitz "<name>"]'
                 ,'[init seize], [init seize "<name>"]'
@@ -2757,7 +2851,8 @@ function getChatCommandList(message) {
                   'Add a character to the initiative list with the given initiative dice pool. If the character name is omitted, it uses your user name.'
                 , 'Add your currently loaded character to the initiative list. Adding the *astral* keyword uses the character\s astral initiative instead. Supply the initiative value to use that specific value. Matrix initiative from character files is not currently supported, so please enter the value manually.'
                 , 'Append surge, blitz, seize, or surprised to any of the *[init add]* commands if you are using adrenaline surge, spending edge to blitz or seize the initiative, or if you are surprised'
-                , 'Change the initiative of your character to the new value, immediately affecting any current initiative score. If the character name is omitted, it uses your user name.'
+                , 'Change the initiative of your character to the new value (e.g. 8+1d6), or by a modifier (e.g. +2d6), immediately affecting any current initiative score. If the character name is omitted, it uses your user name.'
+                , 'Alias for [init change ...]. See description of that command for more details.'
                 , 'Removes the character from the initiative tracker. If the character name is omitted, it uses your user name.'
                 , 'Blitz for the next combat turn. Set the initiative dice of the character to +5d6 for one combat turn. If the character name is omitted, it uses your user name.'
                 , 'Seize the initiative for the next combat turn. The character acts first in all initiative passes for one combat turn. If the character name is omitted, it uses your user name.'
