@@ -2739,7 +2739,7 @@ function getChatCommandList(message) {
             ],
             desc: [
                   'Add a character to the initiative list with the given initiative dice pool. If the character name is omitted, it uses your user name.'
-                , 'Add your currently loaded character to the initiative list. Adding the *astral* keyword uses the character\s astral initiative instead. Supply the initiative value to use that specific value.'
+                , 'Add your currently loaded character to the initiative list. Adding the *astral* keyword uses the character\s astral initiative instead. Supply the initiative value to use that specific value. Matrix initiative from character files is not currently supported, so please enter the value manually.'
                 , 'Append surge, blitz, seize, or surprised to any of the *[init add]* commands if you are using adrenaline surge, spending edge to blitz or seize the initiative, or if you are surprised'
                 , 'Change the initiative of your character to the new value, immediately affecting any current initiative score. If the character name is omitted, it uses your user name.'
                 , 'Removes the character from the initiative tracker. If the character name is omitted, it uses your user name.'
@@ -2862,62 +2862,6 @@ function getChatCommandList(message) {
             subpattern: '',
             example: ['[E]'],
             desc: ['Extend your previous roll'],
-            game: ['SR5e'],
-            func: function (message, match, cmd) {generalRoll(message, match, cmd)}, // TODO: Change command
-            permission: '',
-            hidden: false
-        },
-        { // Add character to initiative list //TODO: Implement this
-            pattern: /^\s*\[\s*$/i,
-            subpattern: '',
-            example: ['[i N name]'],
-            desc: ['Add a character with the given name to the initiative list with initiative N, which can be either a constant or a dice expression. '
-                +'If the name is omitted, the name of your active character is used. If you have no active character, your user name is used. '
-                +'This initiative is automatically rolled each new combat turn.'],
-            game: ['SR5e'],
-            func: function (message, match, cmd) {generalRoll(message, match, cmd)}, // TODO: Change command
-            permission: '',
-            hidden: false
-        },
-        { // Temporarily modify character's initiative //TODO: Implement this
-            pattern: /^\s*\[\s*$/i, 
-            subpattern: '',
-            example: ['[i +N name]'],
-            desc: ['Increase or decrease (with - instead of +) the initiative score of the character with the given name for this combat turn. N can be a constant or a dice expression. '
-                +'If you omitt the name, your active character name will be used, otherwise your user name.'],
-            game: ['SR5e'],
-            func: function (message, match, cmd) {generalRoll(message, match, cmd)}, // TODO: Change command
-            permission: '',
-            hidden: false
-        },
-        { // Reroll character's initiative (e.g. change interface mode) //TODO: Implement this
-            pattern: /^\s*\[\s*$/i, 
-            subpattern: '',
-            example: ['[reroll init]'],
-            desc: ['Reroll the initiative of your active character, or the character with your user name, using their initiative expression.'],
-            game: ['SR5e'],
-            func: function (message, match, cmd) {generalRoll(message, match, cmd)}, // TODO: Change command
-            permission: '',
-            hidden: false
-        },
-        { // Start/end combat or go to next character //TODO: Implement this
-            pattern: /^\s*\[\s*$/i,
-            subpattern: '',
-            example: ['[start combat], [next], [end combat]'],
-            desc: ['At the start of combat, the initiative expressions for all added characters will be rolled and the initiative order will be established. '
-                +'Use [next] to go to the next character in initiative order. This iterates through all initiative passes until a new combat turn begins, '
-                +'at which point the initiative is rerolled automatically for all characters, using their initiative expressions. [end combat] removes all '
-                +'characters from the initiative queue and resets their initiative expressions.'],
-            game: ['SR5e'],
-            func: function (message, match, cmd) {generalRoll(message, match, cmd)}, // TODO: Change command
-            permission: '',
-            hidden: false
-        },
-        { // List initiative //TODO: Implement this
-            pattern: /^\s*\[\s*$/i,
-            subpattern: '',
-            example: ['[i show]'],
-            desc: ['Show initiative information, such as current pass, current initiative values, etc.'],
             game: ['SR5e'],
             func: function (message, match, cmd) {generalRoll(message, match, cmd)}, // TODO: Change command
             permission: '',
@@ -3105,81 +3049,6 @@ const sr5attributeMap = {
     'resonance': 'RES',
     'depth': 'DEP'
 }
-
-const sr5initiativeHelp = [
-    { // set
-        example: ['[init set "<name>" XdY+C]'],
-        desc: ['Set the default initiative of the named character, but do not add it to the list of combatants.'
-              +' You may omit the character name if you have an active character.'],
-        game: ['SR5e'],
-        permission: '',
-        hidden: false
-    },
-    { // add
-        example: ['[init add "<name>" XdY+C]'],
-        desc: ['Add a combatant with the given name to the list of combatants at the given initiative'
-             +' You may omit the character name if you have an active character, and you may omit the dice code if the character has a default initiative set.'],
-        game: ['SR5e'],
-        permission: '',
-        hidden: false
-    },
-    { // temporary
-        example: ['[init temporary "<name>" XdY+C]'],
-        desc: ['Modify the initiative of the named character until the end of this combat.'
-             +' If the dice code starts with a + or -, it will be applied as a modifier to the current initiative.'
-             +' If not, it will replace the current initiative.'
-             +' You may omit the character name if you have an active character.'],
-        game: ['SR5e'],
-        permission: '',
-        hidden: false
-    },
-    { // permanent
-        example: ['[init permanent "<name>" XdY+C]'],
-        desc: ['Modify the initiative of the named character until the end of this combat.'
-             +' If the dice code starts with a + or -, it will be applied as a modifier to the current initiative.'
-             +' If not, it will replace the current initiative.'
-             +' You may omit the character name if you have an active character.'],
-        game: ['SR5e'],
-        permission: '',
-        hidden: false
-    },
-    { // roll
-        example: ['[init roll]'],
-        desc: ['Start a new combat turn by having all listed combatants roll initiative.'],
-        game: ['SR5e'],
-        permission: '',
-        hidden: false
-    },
-    { // show
-        example: ['[init show]'],
-        desc: ['Show the current list of combatants.'],
-        game: ['SR5e'],
-        permission: '',
-        hidden: false
-    },
-    { // next
-        example: ['[init next]'],
-        desc: ['Go to the next character.'],
-        game: ['SR5e'],
-        permission: '',
-        hidden: false
-    },
-    { // remove
-        example: ['[init remove "<name>"]'],
-        desc: ['Remove the named character from the list of combatants.'
-             +' You may omit the character name if you have an active character.'],
-        game: ['SR5e'],
-        permission: '',
-        hidden: false
-    },
-    { // clear
-        example: ['[init clear]'],
-        desc: ['Remove all characters from the list of combatants.'],
-        game: ['SR5e'],
-        permission: '',
-        hidden: false
-    }
-]
 
 const botBehaviourResponses = {
     good: [ ':blush:',
