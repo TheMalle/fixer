@@ -1020,11 +1020,12 @@ function sr5Initiative(message,match,command) {
 
             if (!messageAssert(message, charExists, `no character found with the name "${charName}"`)) { return; };
             delete bot.channel[channelId].game[gameId].init.character[charFieldName];
-            if (combatIsActive && charFieldName == bot.channel[channelId].game[gameId].init[activeCombatFieldName].currentCharacter) {
-                bot.channel[channelId].game[gameId].init[activeCombatFieldName].currentCharacter = null;
-                sr5NextInitiativeCharacter(message);
-            }
             message.reply(`removed ${charName} from the initiative tracker.`)
+            if (combatIsActive && charFieldName == bot.channel[channelId].game[gameId].init[activeCombatFieldName].currentCharacter) {
+                // If a combat is running, select the next character and show the table
+                sr5NextInitiativeCharacter(message);
+                printSr5InitiativeTable(message);
+            }
             }; break;
 
         case 'blitz': {
@@ -2005,16 +2006,24 @@ function printSr5InitiativeTable(message) {
     let gameId = getGameMode(message);
     let initOrder = [];
     if (initHasCombat(channelId,gameId)) {
-        let embed = new Discord.RichEmbed();
         let initData = bot.channel[channelId].game[gameId].init;
         let charFieldNames = Object.keys(initData);
 
-        // If there is a current character, add them first
+        // If there is a log of previous actions, add them
+        let log = bot.channel[channelId].game[gameId].init[activeCombatFieldName].log;
+        let logLength = log ? log.length : 0;
+        for (var ii=0;ii<logLength;ii++) {
+            let logEntry = log[ii];
+            initOrder.push({name: logEntry.name, init: logEntry.init, pass: logEntry.pass, acted: true, current: false});
+        }
+
+        // If there is a current character, add them
         let currCharKey = initData[activeCombatFieldName].currentCharacter;
+        let currPass = initData[activeCombatFieldName].initiativePass;
         if (currCharKey) {
             let charName = initData.character[currCharKey].name;
             let init = initData.character[currCharKey].currentInit;
-            initOrder.push({name: charName, init: init, pass: 0 });
+            initOrder.push({name: charName, init: init, pass: currPass, acted: false, current: true });
         }
 
         // Then, go through the characters, ignoring the current character and any who have already acted
@@ -2029,14 +2038,16 @@ function printSr5InitiativeTable(message) {
         }
         actThisTurn.sort(function(a,b){return sr5CompareInitiativeOrder(channelId,gameId,a,b)});
         for (var ii=0;ii<actThisTurn.length;ii++) {
-            initOrder.push({name: actThisTurn[ii].name, init: actThisTurn[ii].currentInit, pass: 0});
+            initOrder.push({name: actThisTurn[ii].name, init: actThisTurn[ii].currentInit, pass: currPass, acted: false, current: false});
         }
 
         // Then, go through all characters at successive -10 init for each pass through
         let penalty = 0;
+        let passOffset = 0;
         let actComingTurn = ['dummy'];
         while (actComingTurn.length > 0) {
-            penalty += 10;
+            passOffset += 1;
+            penalty = 10*passOffset;
             actComingTurn = [];
             for (var ii=0;ii<charKeys.length;ii++) {
                 let charKey = charKeys[ii];
@@ -2048,24 +2059,33 @@ function printSr5InitiativeTable(message) {
             }
             actComingTurn.sort(function(a,b){return sr5CompareInitiativeOrder(channelId,gameId,a,b)});
             for (var ii=0;ii<actComingTurn.length;ii++) {
-                initOrder.push({name: actComingTurn[ii].name, init: actComingTurn[ii].currentInit-penalty, pass: penalty});
+                initOrder.push({name: actComingTurn[ii].name, init: actComingTurn[ii].currentInit-penalty, pass: currPass+passOffset, acted: false, current: false});
             }
         }
 
         // TODO: Add in display of characters who have no remaining passes whatsoever
 
-        if (initOrder.length > 0) {
-            let desc = `${initOrder[ii].init}: ${initOrder[ii].name}\n`;
-            let passNum = bot.channel[channelId].game[gameId].init[activeCombatFieldName].initiativePass;
+        let embed = new Discord.RichEmbed();
+        if (initOrder.length > logLength) {
+            // Every pass is a field in a richEmbed; initialize the first pass contents
+            let passCounter = initOrder[ii].pass;
+            let old = initOrder[ii].acted;
+            let current = initOrder[ii].current;
+            let desc = `${old ? '~~' : ''}${initOrder[0].init}: ${initOrder[0].name}${current ? ' <--- Acting now' : ''}${old ? '~~' : ''}\n`;
             for (var ii=1;ii<initOrder.length;ii++) {
-                if (initOrder[ii].pass != initOrder[ii-1].pass) {
-                    embed.addField(`Pass ${passNum}`,desc)
+                // If new pass, submit the previous field and start a new one
+                if (initOrder[ii].pass != passCounter) {
+                    embed.addField(`Pass ${passCounter}`,desc)
+                    passCounter = initOrder[ii].pass;
                     desc = '';
-                    passNum += 1;
                 }
-                desc += `${initOrder[ii].init}: ${initOrder[ii].name}\n`;
+
+                // add initiative
+                current = initOrder[ii].current;
+                old = initOrder[ii].acted;
+                desc +=  `${old ? '~~' : ''}${initOrder[ii].init}: ${initOrder[ii].name}${current ? ' <--- Acting now' : ''}${old ? '~~' : ''}\n`;
             }
-            embed.addField(`Pass ${passNum}`,desc)
+            embed.addField(`Pass ${passCounter}`,desc);
             embed.setDescription('');
         } else {
             embed.setDescription('No characters have any remaining passes. Use [init new turn] to start a new combat turn.');
@@ -2533,7 +2553,8 @@ function sr5InitiativeSetupCombat(message) {
     bot.channel[channelId].game[gameId].init[activeCombatFieldName] = {
         combatTurn: 1,
         initiativePass: 1,
-        currentCharacter: null
+        currentCharacter: null,
+        log: []
     }
 
     // Reset removed from combat
@@ -2552,6 +2573,9 @@ function sr5InitiativeSetupCombat(message) {
 function sr5InitiativeNewTurn(message) {
     let channelId = message.channel.id;
     let gameId = getGameMode(message);
+    
+    // Reset action log
+    bot.channel[channelId].game[gameId].init[activeCombatFieldName].log = [];
 
     // Reset initiative pass counter
     bot.channel[channelId].game[gameId].init[activeCombatFieldName].initiativePass = 1;
@@ -2577,7 +2601,7 @@ function sr5InitiativeNewPass(message){
     let channelId = message.channel.id;
     let gameId = getGameMode(message);
     let characterKeys = Object.keys(bot.channel[channelId].game[gameId].init.character);
-    
+
     // Reduce initiative of all participants
     for (var ii=0;ii<characterKeys.length;ii++) {
         let charKey = characterKeys[ii];
@@ -2602,16 +2626,24 @@ function sr5InitiativeNextCharacter(message) {
     let channelId = message.channel.id;
     let gameId = getGameMode(message);
 
-    // Mark current character as having acted
-    let currCharKey = bot.channel[channelId].game[gameId].init[activeCombatFieldName].currentCharacter;
-    bot.channel[channelId].game[gameId].init.character[currCharKey].actedThisPass = true;
+    // If there is a current character
+    if (bot.channel[channelId].game[gameId].init[activeCombatFieldName].currentCharacter) {
+        // Mark current character as having acted
+        let currCharKey = bot.channel[channelId].game[gameId].init[activeCombatFieldName].currentCharacter;
+        let currChar = bot.channel[channelId].game[gameId].init.character[currCharKey];
+        let charName = currChar.name;
+        let currInit = currChar.currentInit;
+        let currPass = bot.channel[channelId].game[gameId].init[activeCombatFieldName].initiativePass;
+        bot.channel[channelId].game[gameId].init.character[currCharKey].actedThisPass = true;
+        bot.channel[channelId].game[gameId].init[activeCombatFieldName].log.push({name: charName, init: currInit, pass: currPass}); 
+    
+        // Get the next character to act this pass
+        sr5NextInitiativeCharacter(message);
 
-    // Get the next character to act this pass
-    sr5NextInitiativeCharacter(message);
-
-    // If no one is acting this pass, go to next initiative pass
-    if (!bot.channel[channelId].game[gameId].init[activeCombatFieldName].currentCharacter) {
-        sr5InitiativeNewPass(message);
+        // If no one is acting this pass, go to next initiative pass
+        if (!bot.channel[channelId].game[gameId].init[activeCombatFieldName].currentCharacter) {
+            sr5InitiativeNewPass(message);
+        }
     }
 
     // Print the current state
@@ -2656,7 +2688,7 @@ function sr5NextInitiativeCharacter(message){
     for (var ii=0;ii<characterKeys.length;ii++) {
         let charKey = characterKeys[ii];
         let thisChar = characterData[charKey];
-        if (thisChar.currentInit > 0 && sr5CompareInitiativeOrder(channelId,gameId,thisChar,nextChar) < 0) {
+        if (!thisChar.actedThisPass && thisChar.currentInit > 0 && sr5CompareInitiativeOrder(channelId,gameId,thisChar,nextChar) < 0) {
             nextChar = thisChar;
             nextCharKey = charKey;
         }
