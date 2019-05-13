@@ -48,8 +48,8 @@ const discordCodeBlockWrapper = '```';
 # Fixer parameters
 ####################################################################################
 */
-const versionId = '0.6.5';
-const games = {'SR5e':'SR5e','DnD5e':'DnD5e','kitd':'Karma in the Dark'};
+const versionId = '0.6.6';
+const games = {'SR5e':'SR5e','DnD5e':'DnD5e','kitd':'Karma in the Dark','Witchcraft':'Witchcraft'};
 const outputLevels = {'minimal':1,'regular':2,'verbose':3};
 const botSavePath = 'fixer.json';
 const errorLogPath = 'error.log';
@@ -577,7 +577,7 @@ function shadowrunBasicRoll(message,match,command) {
 function karmaInTheDarkRoll(message,match,command) {
     let parser = new Parser();
     let regEx = new RegExp(command.pattern);
-    let regExSub = new RegExp(command.subpattern)
+    let regExSub = new RegExp(command.subpattern);
     let matches = regEx.exec(match);
 
     let channelId = message.channel.id;
@@ -587,6 +587,19 @@ function karmaInTheDarkRoll(message,match,command) {
     let roll = kitdRoll(nDice,matches[0]);
 
     printKarmaInTheDarkRoll(message, roll);
+}
+function witchcraftRoll(message,match,command) {
+    let parser = new Parser();
+    let regEx = new RegExp(command.pattern);
+    let matches = regEx.exec(match);
+
+    let channelId = message.channel.id;
+    let userId = message.author.id;
+
+    let modifier = parser.evaluate(matches[0]);
+    let roll = witchcraftBasicRoll(modifier,matches[0]);
+
+    printWitchcraftRoll(message, roll);
 }
 function setGameMode(message,match,command) {
     let regEx = new RegExp(command.pattern);
@@ -1412,6 +1425,91 @@ function kitdRoll(dice,rollCode) {
     }
 
 }
+function witchcraftBasicRoll(modifier,rollCode) {
+    // Allocate roll array
+    let rolls = [];
+
+    // Roll the first die
+    let currRoll = getRandomInt(1,10);
+    let ruleOfOne = currRoll == 1;
+    let ruleOfTen = currRoll == 10;
+    let done = !(ruleOfOne || ruleOfTen);
+    rolls.push(currRoll);
+
+    // Handle rule of 1 / rule of 10
+    while ((ruleOfOne || ruleOfTen) && !done) {
+        if (ruleOfOne) {
+            ruleOfTen = false;
+            let newRoll = getRandomInt(1,10);
+            rolls.push(newRoll);
+            if (newRoll != 1) {
+                done = true;
+            }
+        }
+        else if (ruleOfTen) {
+            ruleOfOne = false;
+            let newRoll = getRandomInt(1,10);
+            rolls.push(newRoll);
+            if (newRoll != 10) {
+                done = true;
+            }
+        }
+    }
+
+    // Calculate numerical result
+    let result = rolls[0];
+    if (ruleOfOne) {
+        for (var ii=1;ii<rolls.length;ii++) {
+            let newRoll = rolls[ii];
+            if (newRoll == 1 && ii == 1) {
+                result = -5;
+            }
+            else if (newRoll == 1) {
+                result -= 5;
+            }
+            else if (newRoll < 5 && ii == 1) {
+                result = newRoll-5;
+            }
+            else if (newRoll < 5) {
+                result += newRoll-5;
+            }
+            else if (newRoll >= 5 && ii == 1) {
+                result = 1;
+            }
+            else if (newRoll >= 5) {
+                result += 1;
+            }
+        }
+    }
+    else if (ruleOfTen) {
+        for (var ii=1;ii<rolls.length;ii++) {
+            result += Math.max(0,rolls[ii] - 5);
+        }
+    }
+    result += modifier;
+    
+    // Levels of success
+    let levelsOfSuccess = 0;
+    if (result <= 8) { }
+    else if (result <= 16)
+        levelsOfSuccess = Math.ceil((result-8)/2);
+    else if (result <= 20)
+        levelsOfSuccess = 5;
+    else
+        levelsOfSuccess = 5+Math.ceil((result-20)/3);
+
+    // Descriptor
+    let descriptor = witchcraftSuccessLevels[Math.min(witchcraftSuccessLevels.length,levelsOfSuccess)];
+    
+    return {
+        roll: rolls,
+        result: result,
+        modifier: modifier,
+        successLevel: levelsOfSuccess,
+        resultType: descriptor,
+        rollCode: rollCode
+    }
+}
 /*
 ####################################################################################
 # Roll code parsers
@@ -1849,6 +1947,30 @@ function printKarmaInTheDarkRoll(message,roll) {
     let description = joinOutputString(
         !isRegular ? '' : 'Roll: ' + diceOutcomes, 
         !isVerbose ? '' : resultExplanation
+    );
+
+    let embed = new Discord.RichEmbed();
+    embed.setTitle(title);
+    embed.setDescription(description);
+    embed.setColor(15746887);
+    message.reply({embed});
+}
+function printWitchcraftRoll(message,roll) {
+    let outputLevel = getOutputLevel(message);
+    
+    let diceOutcomes = roll.roll.join(',');
+    let successLevelName = roll.resultType;
+    let successLevelCount = roll.successLevel;
+    let modifier = roll.modifier;
+
+    let isVerbose = outputLevel >= outputLevels.verbose;
+    let isRegular = outputLevel >= outputLevels.regular;
+
+    let title = roll.result + " - " + successLevelName + ' (Level ' + successLevelCount + ')';
+    let description = joinOutputString(
+        !isRegular ? '' : 'Roll: ' + diceOutcomes, 
+        !isRegular ? '' : 'Modifier: ' + modifier, 
+        !isVerbose ? '' : ''
     );
 
     let embed = new Discord.RichEmbed();
@@ -3089,6 +3211,17 @@ function getChatCommandList(message) {
             permission: '',
             hidden: false,
             topic: ['rolls']
+        },
+        { // Witchcraft rolls
+            pattern: /^\s*([\+\-\*]?\s*\d+(?:\s*[\+\-\*]\d+)*)\s*$/,
+            subpattern: '',
+            example: ['[x]'],
+            desc: ['Roll a test with a modifier x. Allows arithmetic operations with +, -, and *.'],
+            game: ['Witchcraft'],
+            func: function (message, match, cmd) {witchcraftRoll(message, match, cmd)},
+            permission: '',
+            hidden: false,
+            topic: ['rolls']
         }
     ];
 }
@@ -3237,3 +3370,5 @@ const botBehaviourResponses = {
             'don\'t hit me! Please don\'t hit me!'
           ]
 }
+
+const witchcraftSuccessLevels = ['Failure','Adequate','Decent','Good','Very Good','Excellent','Extraordinary','Mind-boggling']
