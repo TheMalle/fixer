@@ -48,7 +48,7 @@ const discordCodeBlockWrapper = '```';
 # Fixer parameters
 ####################################################################################
 */
-const versionId = '0.6.6';
+const versionId = '0.6.7';
 const games = {'SR5e':'SR5e','DnD5e':'DnD5e','kitd':'Karma in the Dark','Witchcraft':'Witchcraft'};
 const outputLevels = {'minimal':1,'regular':2,'verbose':3};
 const botSavePath = 'fixer.json';
@@ -406,47 +406,30 @@ function importBotData(message,match,command) {
     return false;
 }
 function generalRoll(message,match,command) {
-    let regEx = new RegExp(command.pattern);
     let regExSub = new RegExp(command.subpattern)
     let matches = regExSub.exec(match);
-    let elementValue = [];
-    let elementSign = [];
-    let elementRolls = [];
-    let elementCode = [];
     let parser = new Parser();
-    let nTotalDice = 0;
+    let matchRaw = match.replace(new RegExp("\s+"),"");
+    let matchCleaned = matchRaw; 
+    let rollTotal = null;
     while (matches) {
-        if (isNaN(matches[2])) {
-            // main component is not just a number, so it is XdY
-            if (!messageAssert(message,matches.length >= 4 && !isNaN(matches[3]),`I can't work out how many dice you want to roll.`)) { return; };
-            if (!messageAssert(message,matches.length >= 5 && !isNaN(matches[4]),`I can't work out how many sides are on those dice.`)) { return; };
-            let sign = matches[1];
-            let code = matches[2];
-            let nDice = parser.evaluate(matches[3]);
-            let nSides = parser.evaluate(matches[4]);
-            nTotalDice += nDice;
-            if (!messageAssert(message,nTotalDice <= maxDiceToRoll,`I can't roll more than ${maxDiceToRoll} dice.`)) { return; };
-            let result = XdY(nDice,nSides,sign);
-            elementValue.push(result.sum);
-            elementRolls.push(result.rolls);
-            elementSign.push(sign);
-            elementCode.push(code);
-        } else {
-            // main component is a number, so a constant
-            let value = parser.evaluate(matches[0]);
-            let rolls = [parser.evaluate(matches[2])];
-            let sign = matches[1];
-            let code = matches[2];
-            elementValue.push(value);
-            elementRolls.push(rolls);
-            elementSign.push(sign);
-            elementCode.push(code);
-        }
+        let matchedString = matches[0];
+        let nDice = matches[1].length == 0 ? 1 : parser.evaluate(matches[1]);
+        let nSides = parser.evaluate(matches[2]);
+        let result = XdY(nDice,nSides);
+        let diceOutcomeString = `(${result.rolls.join("+")})`
+        matchCleaned = matchCleaned.replace(matchedString,diceOutcomeString);
         matches = regExSub.exec(match);
     }
-    let rollTotal = elementValue.reduce(function (sum,value) {return sum+parseInt(value)});
+    try {
+        rollTotal = parser.evaluate(matchCleaned);
+    }
+    catch {
+        message.reply(`I cannot successfully parse '${match}'.`)
+        return;
+    }
 
-    printGeneralRollDetails(message,match,elementValue,elementRolls,elementCode,elementSign);
+    printGeneralRollDetails(message,matchRaw,matchCleaned,rollTotal);
 }
 function shadowrunBasicRoll(message,match,command) {
     let parser = new Parser();
@@ -1681,27 +1664,14 @@ function sr5AvailabilityTime(netHits,costString) {
     return timeString
 }
 
-function printGeneralRollDetails(message,match,elementValue,elementRolls,elementCode,elementSign) {
+function printGeneralRollDetails(message,match,matchCleaned,rollTotal) {
     let outputLevel = getOutputLevel(message);
     
-    let valueStr = '';
-    let diceStr = '';
-    let rollTotal = elementValue.reduce(function (sum,value) {return sum+parseInt(value)});
-
     let isVerbose = outputLevel >= outputLevels.verbose;
     let isRegular = outputLevel >= outputLevels.regular;
 
-    for (var ii=0;ii<elementRolls.length;ii++) {
-        valueStr += ((ii > 0 && elementValue[ii] >= 0) ? elementSign[ii] : '') + elementValue[ii];
-        if (isNaN(elementCode[ii])) {
-            diceStr += (elementSign[ii] == "-" ? elementSign[ii] : "") + elementCode[ii] + '=' + (elementSign[ii] == "-" ? elementSign[ii] : "") + '(' + elementRolls[ii].toString() + ')=' + elementValue[ii] + ', ';
-        }
-    }
-    diceStr = diceStr.slice(0,-2);
-    
     let resultString = '**' + rollTotal + '**';
-    let diceCodeString = match.replace(/ /g,'') + '=' + valueStr + '=' + rollTotal;
-    let diceOutcomeString = diceStr;
+    let diceCodeString = match.replace(/ /g,'').replace(/\*/g,'\\*') + ' = ' + matchCleaned.replace(/ /g,'').replace(/\*/g,'\\*') + ' = ' + rollTotal;
 
     let title = 'Roll: ' + resultString;
     let description = joinOutputString(
@@ -3164,18 +3134,6 @@ function getChatCommandList(message) {
             permission: '',
             hidden: false
         },*/
-        { // General dice roll
-            pattern: /^\s*(\s*[\+\-]?\s*(\d+d\d+|\d+))*\s*([\+\-]?\s*\d+d\d+)\s*(\s*[\+\-]?\s*(\d+d\d+|\d+))*\s*$/i,
-            //pattern: /^\s*(?:([\+\-]?)\s*(\d+d\d+|\d+))(?:\s*([\+\-])\s*(\d+d\d+|\d+))*\s*$/i,
-            subpattern: /([\+\-]?)\s*((\d+)d(\d+)|\d+)/gi,
-            example: ['[XdY+C]'],
-            desc: ['Roll any combination of dice and static modifiers.'],
-            game: [],
-            func: function (message, match, cmd) {generalRoll(message, match, cmd)},
-            permission: '',
-            hidden: false,
-            topic: ['rolls']
-        },
         { // Shadowrun basic rolls
             //            (nDice                                                    )    (limit                                                                   )    (e)    (type   )    (mDice                                                    )    (limit                                                                   )    (e)    (extraparam             )     
             pattern: /^\s*([\+\-]?\s*(?:\d+|[A-z_]+)(?:\s*[\+\-]\s*(?:\d+|[A-z_]+))*)?\s*(\(\s*(?:[\+\-]?\s*(?:\d+|[A-z_]+)(?:\s*[\+\-]\s*(?:\d+|[A-z_]+))*)?\s*\))?\s*(!)?\s*(v|T|a|e)?\s*([\+\-]?\s*(?:\d+|[A-z_]+)(?:\s*[\+\-]\s*(?:\d+|[A-z_]+))*)?\s*(\(\s*(?:[\+\-]?\s*(?:\d+|[A-z_]+)(?:\s*[\+\-]\s*(?:\d+|[A-z_]+))*)?\s*\))?\s*(!)?\s*((?:\s*,\s*[^,\s][^,]*)+)?\s*$/i, 
@@ -3219,6 +3177,18 @@ function getChatCommandList(message) {
             desc: ['Roll a test with a modifier x. Allows arithmetic operations with +, -, and *.'],
             game: ['Witchcraft'],
             func: function (message, match, cmd) {witchcraftRoll(message, match, cmd)},
+            permission: '',
+            hidden: false,
+            topic: ['rolls']
+        },
+        { // General dice roll
+            pattern: /^[\*\+\-\/\s\dd\(\)]*$/i,
+            //pattern: /^\s*(?:([\+\-]?)\s*(\d+d\d+|\d+))(?:\s*([\+\-])\s*(\d+d\d+|\d+))*\s*$/i,
+            subpattern: /(\d*)d(\d+)/gi,
+            example: ['[XdY+C]'],
+            desc: ['Roll any combination of dice and static modifiers.'],
+            game: [],
+            func: function (message, match, cmd) {generalRoll(message, match, cmd)},
             permission: '',
             hidden: false,
             topic: ['rolls']
