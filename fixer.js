@@ -48,7 +48,7 @@ const discordCodeBlockWrapper = '```';
 # Fixer parameters
 ####################################################################################
 */
-const versionId = '0.6.7';
+const versionId = '0.6.8';
 const games = {'SR5e':'SR5e','DnD5e':'DnD5e','kitd':'Karma in the Dark','Witchcraft':'Witchcraft'};
 const outputLevels = {'minimal':1,'regular':2,'verbose':3};
 const botSavePath = 'fixer.json';
@@ -424,7 +424,7 @@ function generalRoll(message,match,command) {
     try {
         rollTotal = parser.evaluate(matchCleaned);
     }
-    catch {
+    catch (err) {
         message.reply(`I cannot successfully parse '${match}'.`)
         return;
     }
