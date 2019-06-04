@@ -424,7 +424,7 @@ function generalRoll(message,match,command) {
     try {
         rollTotal = parser.evaluate(matchCleaned);
     }
-    catch {
+    catch (err) {
         message.reply(`I cannot successfully parse '${match}'.`)
         return;
     }
