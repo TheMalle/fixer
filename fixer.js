@@ -48,8 +48,8 @@ const discordCodeBlockWrapper = '```';
 # Fixer parameters
 ####################################################################################
 */
-const versionId = '0.6.8';
-const games = {'SR5e':'SR5e','DnD5e':'DnD5e','kitd':'Karma in the Dark','Witchcraft':'Witchcraft'};
+const versionId = '0.6.9';
+const games = {'d20':'d20','SR5e':'SR5e','DnD5e':'DnD5e','kitd':'Karma in the Dark','Witchcraft':'Witchcraft'};
 const outputLevels = {'minimal':1,'regular':2,'verbose':3};
 const botSavePath = 'fixer.json';
 const errorLogPath = 'error.log';
@@ -583,6 +583,19 @@ function witchcraftRoll(message,match,command) {
     let roll = witchcraftBasicRoll(modifier,matches[0]);
 
     printWitchcraftRoll(message, roll);
+}
+function d20roll(message,match,command) {
+    let parser = new Parser();
+    let regEx = new RegExp(command.pattern);
+    let matches = regEx.exec(match);
+
+    let channelId = message.channel.id;
+    let userId = message.author.id;
+
+    let modifier = parser.evaluate(matches[0]);
+    let roll = d20basicRoll(modifier,matches[0]);
+
+    printd20roll(message, roll);
 }
 function setGameMode(message,match,command) {
     let regEx = new RegExp(command.pattern);
@@ -1493,6 +1506,27 @@ function witchcraftBasicRoll(modifier,rollCode) {
         rollCode: rollCode
     }
 }
+function d20basicRoll(modifier,rollCode) {
+    // Allocate roll array
+    let rolls = [];
+    rolls.push(getRandomInt(1,20));
+
+    // Calculate numerical result
+    let result = rolls[0] + modifier;
+
+    // Check for natural 1 / natural 20
+    let nat1 = rolls[0] == 1;
+    let nat20 = rolls[0] == 20;
+
+    return {
+        roll: rolls,
+        result: result,
+        nat1: nat1,
+        nat20: nat20,
+        modifier: modifier,
+        rollCode: rollCode
+    }
+}
 /*
 ####################################################################################
 # Roll code parsers
@@ -1676,7 +1710,7 @@ function printGeneralRollDetails(message,match,matchCleaned,rollTotal) {
     let title = 'Roll: ' + resultString;
     let description = joinOutputString(
                         !isRegular ? '' : diceCodeString,
-                        !isVerbose ? '' : diceOutcomeString
+                        !isVerbose ? '' : ''
                     );
 
     let embed = new Discord.RichEmbed();
@@ -1949,6 +1983,35 @@ function printWitchcraftRoll(message,roll) {
     embed.setColor(15746887);
     message.reply({embed});
 }
+function printd20roll(message,roll) {
+    let outputLevel = getOutputLevel(message);
+    
+    let isVerbose = outputLevel >= outputLevels.verbose;
+    let isRegular = outputLevel >= outputLevels.regular;
+
+    let isNat1 = roll.nat1;
+    let isNat20 = roll.nat20;
+
+    let rollTotal = roll.result;
+
+    let cleanRollCode = roll.rollCode.replace(/ /g,'').replace(/\*/g,'\\*');
+    let prependSign = cleanRollCode.match(/^[^\+\-]/) ? "+" : "";
+
+    let resultString = '**' + rollTotal + '**' + (isNat1 ? " (natural 1)" : "") + (isNat20 ? " (natural 20)" : "");
+    let diceCodeString = "1d20" + prependSign + cleanRollCode + ' = ' + "(" + roll.roll[0] + ")" + prependSign + roll.modifier + ' = ' + rollTotal;
+
+    let title = 'Roll: ' + resultString;
+    let description = joinOutputString(
+                        !isRegular ? '' : diceCodeString,
+                        !isVerbose ? '' : ''
+                    );
+    let embed = new Discord.RichEmbed();
+    embed.setTitle(title);
+    embed.setDescription(description);
+    embed.setColor(15746887);
+    message.reply({embed});
+}
+
 /*
 ####################################################################################
 # Printing functions
@@ -3177,6 +3240,19 @@ function getChatCommandList(message) {
             desc: ['Roll a test with a modifier x. Allows arithmetic operations with +, -, and *.'],
             game: ['Witchcraft'],
             func: function (message, match, cmd) {witchcraftRoll(message, match, cmd)},
+            permission: '',
+            hidden: false,
+            topic: ['rolls']
+        },
+        { // d20 roll
+            pattern: /^\s*([\+\-]?\s*\d+(?:\s*[\+\-\*]\d+)*)\s*$/,
+            subpattern: '',
+            example: ['[C]',
+                      '[-C]',
+                      '[A+B-C]'],
+            desc: ['Roll 1d20 with modifiers.'],
+            game: ['d20'],
+            func: function (message, match, cmd) {d20roll(message, match, cmd)},
             permission: '',
             hidden: false,
             topic: ['rolls']
