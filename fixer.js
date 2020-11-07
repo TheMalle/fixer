@@ -257,7 +257,7 @@ function displayMacroList(message,match,command) {
     let showAll = matches[1] ? matches[1].toLowerCase() == 'all' : false;
     let activeGame = getGameMode(message);
 
-    let embed = new Discord.RichEmbed();
+    let embed = new Discord.MessageEmbed();
     let userHasAMacro = false;
     if (botHasChannel(channelId)) {
         let gameData = bot.channel[channelId].game;
@@ -741,7 +741,7 @@ function displayCharacterList(message,match,command) {
     let channelId = message.channel.id;
     let userId = message.author.id;
 
-    let embed = new Discord.RichEmbed();
+    let embed = new Discord.MessageEmbed();
     let userHasACharacter = false;
     let activeCharacter = getActiveCharacter(message);
     let activeGame = getGameMode(message);
@@ -1713,7 +1713,7 @@ function printGeneralRollDetails(message,match,matchCleaned,rollTotal) {
                         !isVerbose ? '' : ''
                     );
 
-    let embed = new Discord.RichEmbed();
+    let embed = new Discord.MessageEmbed();
     embed.setTitle(title);
     embed.setDescription(description);
     embed.setColor(15746887);
@@ -1751,7 +1751,7 @@ function printSr5SimpleTest(message,roll) {
         diceOutcomeString
     );
 
-    let embed = new Discord.RichEmbed();
+    let embed = new Discord.MessageEmbed();
     embed.setTitle(title);
     embed.setDescription(description);
     embed.setColor(15746887);
@@ -1811,7 +1811,7 @@ function printSr5OpposedTest(message,rollA,rollB) {
         diceOutcomeStringB
     )
 
-    let embed = new Discord.RichEmbed();
+    let embed = new Discord.MessageEmbed();
     embed.setTitle(title);
     embed.setDescription(description);
     embed.setColor(15746887);
@@ -1855,7 +1855,7 @@ function printSr5ThresholdTest(message,roll,threshold) {
         diceOutcomeString
     );
 
-    let embed = new Discord.RichEmbed();
+    let embed = new Discord.MessageEmbed();
     embed.setTitle(title);
     embed.setDescription(description);
     embed.setColor(15746887);
@@ -1916,7 +1916,7 @@ function printSr5AvailabilityTest(message,rollA,rollB,cost) {
         diceOutcomeStringB
     )
 
-    let embed = new Discord.RichEmbed();
+    let embed = new Discord.MessageEmbed();
     embed.setTitle(title);
     embed.setDescription(description);
     embed.setColor(15746887);
@@ -1953,7 +1953,7 @@ function printKarmaInTheDarkRoll(message,roll) {
         !isVerbose ? '' : resultExplanation
     );
 
-    let embed = new Discord.RichEmbed();
+    let embed = new Discord.MessageEmbed();
     embed.setTitle(title);
     embed.setDescription(description);
     embed.setColor(15746887);
@@ -1977,7 +1977,7 @@ function printWitchcraftRoll(message,roll) {
         !isVerbose ? '' : ''
     );
 
-    let embed = new Discord.RichEmbed();
+    let embed = new Discord.MessageEmbed();
     embed.setTitle(title);
     embed.setDescription(description);
     embed.setColor(15746887);
@@ -2005,7 +2005,7 @@ function printd20roll(message,roll) {
                         !isRegular ? '' : diceCodeString,
                         !isVerbose ? '' : ''
                     );
-    let embed = new Discord.RichEmbed();
+    let embed = new Discord.MessageEmbed();
     embed.setTitle(title);
     embed.setDescription(description);
     embed.setColor(15746887);
@@ -2018,7 +2018,7 @@ function printd20roll(message,roll) {
 ####################################################################################
 */
 function printTable(message,title,desc,data,columns) {
-    let embed = new Discord.RichEmbed()
+    let embed = new Discord.MessageEmbed()
     embed.setColor(15746887);
     embed.setTitle('__**' + title + '**__');
     embed.setDescription(desc);
@@ -2027,7 +2027,7 @@ function printTable(message,title,desc,data,columns) {
         if (isUsedInGame(message,data[ii]) && !data[ii].hidden) {
             if ((data[ii].permission) && ('permission' in data[ii])) {
                 if (!(data[ii].permission in knownPermissions)) {
-                    knownPermissions[data[ii].permission] = message.channel.guild.members.get(message.author.id).hasPermission(data[ii].permission);
+                    knownPermissions[data[ii].permission] = message.member.hasPermission(data[ii].permission);
                 }
             }
 
@@ -2061,7 +2061,7 @@ function printCurrentGameSetting(message,settingName) {
 
     // Add fields for all settings
     if (validSettingValues.length > 0) {
-        let embed = new Discord.RichEmbed()
+        let embed = new Discord.MessageEmbed()
 
         for (var ii=0;ii<validSettingValues.length;ii++) {
             let valueName = validSettingValues[ii];
@@ -2091,7 +2091,7 @@ function printCurrentGameSettings(message) {
     let validSettingList = getGameSettingList(activeGame);
     let validSettingNames = Object.keys(validSettingList);
 
-    let embed = new Discord.RichEmbed();
+    let embed = new Discord.MessageEmbed();
 
     // Add fields for all settings
     for (var ii=0;ii<validSettingNames.length;ii++) {
@@ -2115,7 +2115,7 @@ function printCurrentOutputSetting(message) {
     let usingBotOutputLevel = !channelOutputLevel || channelOutputLevel.toLowerCase() == 'default';
     let activeOutputLevel = usingBotOutputLevel ? botOutputLevel : channelOutputLevel;
 
-    let embed = new Discord.RichEmbed();
+    let embed = new Discord.MessageEmbed();
     let validOutputLevelNames = Object.keys(outputLevels);    
     let listOfOutputs = '';
     for (var ii=0;ii<validOutputLevelNames.length;ii++) {
@@ -2136,7 +2136,7 @@ function printSr5InitiativeDetails(message) {
     let channelId = message.channel.id;
     let gameId = getGameMode(message);
     if (gameHasInitiative(channelId,gameId)) {
-        let embed = new Discord.RichEmbed();
+        let embed = new Discord.MessageEmbed();
         let characterData = bot.channel[channelId].game[gameId].init.character;
         let charFieldNames = Object.keys(characterData);
         if (charFieldNames.length > 0) {
@@ -2220,9 +2220,9 @@ function printSr5InitiativeTable(message) {
 
         // TODO: Add in display of characters who have no remaining passes whatsoever
 
-        let embed = new Discord.RichEmbed();
+        let embed = new Discord.MessageEmbed();
         if (initOrder.length > logLength) {
-            // Every pass is a field in a richEmbed; initialize the first pass contents
+            // Every pass is a field in a MessageEmbed; initialize the first pass contents
             let passCounter = initOrder[ii].pass;
             let old = initOrder[ii].acted;
             let current = initOrder[ii].current;
