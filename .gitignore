@@ -7,4 +7,4 @@ errorData/*.log
 error.log
 .vscode/
 *.log
-*.json
+fixer.json
