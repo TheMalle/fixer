@@ -2288,7 +2288,8 @@ function parseSr5Character(message, chummerJson, alias) {
     if (!messageAssert(message,chummerJson,'the pastebin data seems to be missing. Could not load character.')) { return; };
 
     // Go through attributes, active skills, knowledge skills, skill groups and improvements
-    var attributeJson = chummerJson.character.attributes[0].attribute;
+    var attributeJson = chummerJson.character.attributes[0].attribute; // .filter(function (attribute) { return attribute.metatypecategory[0] == 'Standard' });
+    attributeJson = attributeJson.filter(function (attr) { return attr.metatypecategory[0].toLowerCase() === 'standard' || attr.metatypecategory[0].toLowerCase() === 'special'}) // TODO: Store abilities grouped on their metatype category
     var improvementJson = chummerJson.character.improvements[0].improvement;
     var activeSkillJson = chummerJson.character.newskills[0].skills[0].skill;
     var knowledgeSkillJson = chummerJson.character.newskills[0].knoskills[0].skill;
