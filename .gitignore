@@ -30,3 +30,5 @@ fixer-*.tar
 .hex
 .mix
 
+# Ignore secrets folder
+/secrets/
