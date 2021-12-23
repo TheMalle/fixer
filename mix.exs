@@ -13,7 +13,8 @@ defmodule Fixer.MixProject do
 
   def application do
     [
-      extra_applications: [:logger]
+      extra_applications: [:logger],
+      mod: {Fixer.Application, []}
     ]
   end
 
