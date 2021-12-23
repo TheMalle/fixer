@@ -1,0 +1,5 @@
+# Ignore nix-related objects
+.bash_history
+.hex
+.mix
+
