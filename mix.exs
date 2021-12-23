@@ -19,6 +19,8 @@ defmodule Fixer.MixProject do
   end
 
   defp deps do
-    []
+    [
+      {:nostrum, "~> 0.4"}
+    ]
   end
 end
