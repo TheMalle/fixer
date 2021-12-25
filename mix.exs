@@ -20,6 +20,7 @@ defmodule Fixer.MixProject do
 
   defp deps do
     [
+      {:map_diff, "~> 1.3"},
       {:nostrum, "~> 0.4"}
     ]
   end
