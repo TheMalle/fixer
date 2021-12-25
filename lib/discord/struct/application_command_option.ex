@@ -1,6 +1,7 @@
 defmodule Fixer.Discord.Struct.ApplicationCommandOption do
   alias Fixer.Discord.Struct.ApplicationCommandOption
 
+  @derive Jason.Encoder
   defstruct [
     :type,
     :name,
