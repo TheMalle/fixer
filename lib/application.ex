@@ -3,7 +3,9 @@ defmodule Fixer.Application do
   use Application
 
   def start(_type, _args) do
-    children = []
+    children = [
+      Fixer.Consumer
+    ]
 
     opts = [strategy: :one_for_one, name: Fixer.Supervisor]
     Supervisor.start_link(children, opts)
