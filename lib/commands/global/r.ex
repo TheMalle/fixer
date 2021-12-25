@@ -14,7 +14,8 @@ defmodule Fixer.Commands.Command.Global.R do
         %ApplicationCommandOption{
           type: 3,
           name: "dicecode",
-          description: "What do you want to roll?"
+          description: "What do you want to roll?",
+          required: true
         }
       ]
     }
