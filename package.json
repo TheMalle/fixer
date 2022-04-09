@@ -22,7 +22,7 @@
     "circular-json": "^0.5.9",
     "discord.js": "^12.4.1",
     "expr-eval": "^2.0.2",
-    "moment": "^2.29.1",
+    "moment": "^2.29.2",
     "text-encoding": "^0.7.0",
     "xml2js": "^0.4.23"
   }
